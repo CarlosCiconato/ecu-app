@@ -1,0 +1,16 @@
+import './audit-setup';
+import { readFileSync } from 'fs';
+import { parseIni } from '../src/core/ini';
+import { FORMS } from '../src/ui/screens/Configuracoes';
+import { CURVAS } from '../src/ui/screens/Curva';
+import { TABELAS } from '../src/ui/screens/MapaInjecao';
+const ini = parseIni(readFileSync('ini/simulador.ini', 'latin1'));
+const bad: string[] = [];
+for (const [k, f] of Object.entries(FORMS)) for (const s of f.sections) for (const x of s.fields) if (!ini.constants.has(x.name)) bad.push(`form ${k}: ${x.name}`);
+for (const [k, c] of Object.entries(CURVAS)) for (const n of [c.x, c.y]) if (!ini.constants.has(n)) bad.push(`curva ${k}: ${n}`);
+for (const [k, c] of Object.entries(CURVAS)) if (c.live && !ini.outputs.has(c.live) && !ini.expressions.has(c.live)) bad.push(`curva live ${k}: ${c.live}`);
+for (const [k, t] of Object.entries(TABELAS)) for (const n of t.tables) if (!ini.tables.has(n)) bad.push(`tabela ${k}: ${n}`);
+for (const [k, t] of Object.entries(TABELAS)) for (const a of [t.x?.live, t.y?.live]) if (a && !ini.outputs.has(a) && !ini.expressions.has(a)) bad.push(`tabela live ${k}: ${a}`);
+const cmds = ['cmd_ltft_reset', 'cmd_ltft_apply_to_ve', 'cmd_odometer_reset_partial', 'cmd_test_inj8', 'cmd_test_spk8', 'cmd_test_fan_2', 'cmd_test_starter_relay'];
+for (const c of cmds) if (!ini.commands.has(c)) bad.push('cmd ' + c);
+console.log(bad.length ? bad : 'tudo existe no .ini', ini.commands.get('cmd_test_inj1'));

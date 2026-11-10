@@ -1,0 +1,13 @@
+import fs from 'node:fs';
+import { parseIni } from '../src/core/ini.js';
+import { EcuSession } from '../src/bridge/ecu.js';
+const ini = parseIni(fs.readFileSync('ini/simulador.ini', 'latin1'));
+console.log('pages', ini.pages, 'consts', ini.constants.size, 'outs', ini.outputs.size, 'tables', ini.tables.size, 'och', ini.ochBlockSize);
+const ecu = new EcuSession(ini);
+ecu.on('status', (s) => s.state !== 'lendo' && console.log('status', s.state, s.message ?? ''));
+await ecu.connect('127.0.0.1', 29001);
+await new Promise((r) => setTimeout(r, 600));
+console.log(ecu.liveValues(['RPMValue', 'MAPValue', 'coolant', 'VBatt', 'lambdaValue', 'TPSValue', 'injTimeTableYAxis', 'actualLastInjection']));
+const t = ecu.table('injTimeTableTbl');
+console.log(t.title, t.rows, t.cols, t.xBins.slice(0, 4), t.yBins.slice(0, 4), t.values.slice(0, 4), 'fuelAlgorithm', ecu.constant('fuelAlgorithm'));
+ecu.disconnect();

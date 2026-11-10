@@ -1,0 +1,10 @@
+import './audit-setup';
+import { FORMS } from '../src/ui/screens/Configuracoes';
+import { SUBMENUS } from '../src/ui/screens/SubMenu';
+const seen: Record<string, string[]> = {};
+for (const [k, f] of Object.entries(FORMS)) for (const s of f.sections) for (const c of s.fields) (seen[c.name] ??= []).push(k);
+for (const [n, l] of Object.entries(seen)) if (l.length > 1) console.log('campo', n, l);
+const go: Record<string, string[]> = {};
+for (const [k, m] of Object.entries(SUBMENUS)) for (const i of m.items) (go[i.go] ??= []).push(k);
+for (const [n, l] of Object.entries(go)) if (l.length > 1) console.log('tela', n, l);
+console.log('ok');
