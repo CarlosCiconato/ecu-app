@@ -3,6 +3,7 @@ import { call, useLive, useStatus, useTable, type TableData } from '../api';
 import { fmt } from '../format';
 import { isDesktop } from '../App';
 import { Grafico3D } from './Grafico3D';
+import { SPEEDUINO_IGN, SPEEDUINO_VE } from './TabelasEcu';
 
 export interface MapaConfig {
   tables: [string, string, string]; // nome da tabela no .ini para os ajustes 1, 2 e 3
@@ -118,8 +119,8 @@ for (let g = 1; g <= 8; g++) {
     x: { name: 'Eixo X', unit: '', live: `gppwmXAxis${g}` }, y: { name: 'Eixo Y', unit: '', live: `gppwmYAxis${g}` } };
 }
 
-export function MapaInjecao() { return <MapaTabela cfg={MAPA_INJECAO} />; }
-export function MapaIgnicao() { return <MapaTabela cfg={MAPA_IGNICAO} />; }
+export function MapaInjecao() { const s = useStatus(); return <MapaTabela key={s.family} cfg={s.family === 'speeduino' && s.state === 'conectado' && !s.demo ? SPEEDUINO_VE : MAPA_INJECAO} />; }
+export function MapaIgnicao() { const s = useStatus(); return <MapaTabela key={s.family} cfg={s.family === 'speeduino' && s.state === 'conectado' && !s.demo ? SPEEDUINO_IGN : MAPA_IGNICAO} />; }
 
 /** Área de transferência entre mapas (linhas de baixo para cima, como a tabela). */
 let clip: number[][] | undefined;

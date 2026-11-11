@@ -7,6 +7,34 @@ const STATE_TEXT: Record<string, string> = {
   conectado: 'Conectado', erro: 'Erro',
 };
 
+const FAMILIA: Record<string, string> = { rusefi: 'rusEFI', speeduino: 'Speeduino', outra: 'Outra ECU' };
+const FONTE: Record<string, string> = {
+  app: 'veio com o app', guardado: 'guardado neste computador', biblioteca: 'biblioteca do app',
+  baixado: 'baixado agora do servidor da rusEFI', parecido: 'versão mais próxima da biblioteca',
+};
+
+/** Quando a ECU responde mas o app não tem o .ini dela: o usuário escolhe o arquivo (o mesmo do TunerStudio). */
+export function EscolherIni() {
+  const s = useStatus();
+  const [erro, setErro] = useState<string>();
+  if (!s.faltaIni) return null;
+  const abrir = async (f?: File) => {
+    if (!f) return;
+    setErro(undefined);
+    const b = new Uint8Array(await f.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode(...b.subarray(i, i + 0x8000));
+    call('iniArquivo', { data: btoa(bin) }).catch((e) => setErro((e as Error).message));
+  };
+  return (
+    <label className="btn primary" style={{ height: 52, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+      Escolher o arquivo .ini da ECU
+      <input type="file" accept=".ini" hidden onChange={(e) => { void abrir(e.target.files?.[0]); e.target.value = ''; }} />
+      {erro && <span className="notice err">{erro}</span>}
+    </label>
+  );
+}
+
 export function Conexao() {
   const s = useStatus();
   const [mode, setMode] = useState<'demo' | 'sim' | 'usb'>('demo');
@@ -16,7 +44,7 @@ export function Conexao() {
   const [serial, setSerial] = useState('');
   const scan = () => call<{ path: string; label: string }[]>('serialPorts').then((p) => {
     setPorts(p);
-    setSerial((cur) => (p.some((x) => x.path === cur) ? cur : (p.find((x) => /usbmodem/i.test(x.path)) ?? p[0])?.path ?? ''));
+    setSerial((cur) => (p.some((x) => x.path === cur) ? cur : (p.find((x) => /usbmodem|usbserial|wchusb|COM\d/i.test(x.path)) ?? p[0])?.path ?? ''));
   }).catch(() => setPorts([]));
   useEffect(() => { if (mode === 'usb' && s.bridgeUp) void scan(); }, [mode, s.bridgeUp]);
   const busy = s.state === 'conectando' || s.state === 'lendo';
@@ -27,7 +55,7 @@ export function Conexao() {
       <section className="card" style={{ flex: 1, padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <span className="label">Como ligar na ECU</span>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-          {([['demo', 'Demonstração', 'ECU falsa dentro do app, para ver as telas'], ['sim', 'Simulador (rede)', 'ECU de teste rodando no computador'], ['usb', 'Cabo USB', 'Placa de verdade no cabo']] as const).map(([k, t, d]) => (
+          {([['demo', 'Demonstração', 'ECU falsa dentro do app, para ver as telas'], ['sim', 'Simulador (rede)', 'ECU de teste rodando no computador'], ['usb', 'Cabo USB', 'Nossa placa, rusEFI ou Speeduino']] as const).map(([k, t, d]) => (
             <button key={k} className="card" onClick={() => setMode(k)}
               style={{ padding: 16, textAlign: 'left', cursor: 'pointer', borderColor: mode === k ? 'var(--amber)' : undefined, borderWidth: 2}}>
               <div className="num" style={{ fontSize: 24 }}>{t}</div>
@@ -76,6 +104,13 @@ export function Conexao() {
           <div className="bar" style={{ height: 10 }}><span style={{ height: 10, width: `${Math.round((s.progress ?? 0) * 100)}%`, background: 'var(--amber)' }} /></div>
         )}
         {s.message && <div className={`notice ${s.state === 'erro' ? 'err' : 'ok'}`}>{s.message}</div>}
+        <EscolherIni />
+        {s.state === 'conectado' && !s.demo && s.family && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span className="label">ECU</span>
+            <span style={{ fontSize: 14 }}>{FAMILIA[s.family] ?? s.family}{s.iniFonte ? ` · .ini ${FONTE[s.iniFonte] ?? s.iniFonte}` : ''}</span>
+          </div>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span className="label">Firmware da ECU</span>
           <span style={{ fontSize: 14, wordBreak: 'break-all' }}>{s.ecuSignature ?? '–'}</span>
@@ -84,7 +119,7 @@ export function Conexao() {
           <span className="label">Arquivo .ini do app</span>
           <span style={{ fontSize: 14, wordBreak: 'break-all' }}>{s.iniSignature || '–'}</span>
         </div>
-        {s.signatureMatch !== undefined && (
+        {s.signatureMatch !== undefined && !s.faltaIni && (
           <div className={`notice ${s.signatureMatch ? 'ok' : 'err'}`}>
             {s.signatureMatch ? 'Firmware e .ini são da mesma versão.' : 'Versões diferentes: atualize o .ini do app antes de mexer no mapa.'}
           </div>

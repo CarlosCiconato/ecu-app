@@ -2,8 +2,10 @@
 // e lê os canais ao vivo várias vezes por segundo.
 import net from 'node:net';
 import { EventEmitter } from 'node:events';
-import { TsClient, type Transport } from '../core/protocol.js';
-import { TYPE_SIZE, type ArrayField, type Ini } from '../core/ini.js';
+import { TsClient, detectSignature, type Transport } from '../core/protocol.js';
+import { acharIni } from '../core/biblioteca.js';
+import { SPEEDUINO_CANAIS, SPEEDUINO_LISTAS, SPEEDUINO_PC, SPEEDUINO_TABELAS } from '../core/traducao.js';
+import { TYPE_SIZE, parseIni, type ArrayField, type Ini } from '../core/ini.js';
 import { decodeArray, decodeBits, decodeField, decodeScalar, encodeArray, encodeBits, encodeScalar } from '../core/codec.js';
 import { DemoEngine, demoPage } from './demo.js';
 import zlib from 'node:zlib';
@@ -78,6 +80,14 @@ export interface EcuStatus {
   undo?: number; // quantas mudanças dá para desfazer
   offline?: string; // mapa aberto sem ECU: nome do arquivo
   rev?: number; // muda quando a configuração volta (desfazer/cancelar): a tela relê as tabelas
+  family?: 'rusefi' | 'speeduino' | 'outra'; // qual ECU está conectada: a tela mostra só o que ela tem
+  iniFonte?: string; // de onde veio o .ini: app, guardado, biblioteca, baixado, parecido
+  faltaIni?: boolean; // a ECU respondeu mas não achamos o .ini dela: a tela pede o arquivo
+}
+
+export interface PastasIni {
+  app: string; // ini/ do app (com a biblioteca da Speeduino)
+  cache: string; // .ini baixados e escolhidos pelo usuário
 }
 
 /** Nº de cilindros de uma ordem de ignição do .ini ("1-3-4-2" = 4). Personalizada/inválida = undefined (vale qualquer). */
@@ -105,6 +115,7 @@ export class EcuSession extends EventEmitter {
   /** Abre um mapa .ecumap sem ECU conectada (como os programas profissionais): dá para ver, editar e salvar no arquivo. */
   openOffline(m: { formato?: string; assinatura?: string; pagina1?: string; nome?: string }, filePath: string) {
     if (m.formato !== 'ecu-mapa' || !m.pagina1) throw new Error('Este arquivo não é um mapa do app.');
+    if (m.assinatura === this.iniPadrao.signature) this.usarIniPadrao();
     if (m.assinatura !== this.ini.signature) throw new Error(`O mapa é de outro firmware (${m.assinatura}); o app está com ${this.ini.signature}.`);
     this.disconnect();
     this.page1 = new Uint8Array(Buffer.from(m.pagina1, 'base64'));
@@ -118,9 +129,19 @@ export class EcuSession extends EventEmitter {
   }
   status: EcuStatus;
 
-  constructor(public ini: Ini) {
+  private iniPadrao: Ini; // .ini do nosso firmware (demonstração e mapas sem ECU)
+
+  constructor(public ini: Ini, private pastas?: PastasIni) {
     super();
-    this.status = { state: 'desconectado', iniSignature: ini.signature, dirty: false };
+    this.iniPadrao = ini;
+    this.status = { state: 'desconectado', iniSignature: ini.signature, dirty: false, family: ini.family };
+  }
+
+  /** Volta para o .ini do nosso firmware (modo demonstração, mapa sem ECU). */
+  private usarIniPadrao() {
+    if (this.ini === this.iniPadrao) return;
+    this.ini = this.iniPadrao;
+    this.setStatus({ iniSignature: this.ini.signature, family: this.ini.family, iniFonte: 'app' });
   }
 
   private setStatus(s: Partial<EcuStatus>) {
@@ -133,12 +154,22 @@ export class EcuSession extends EventEmitter {
   }
 
   connectSerial(path: string) {
-    return this.connectWith(path, () => serialTransport(path));
+    return this.connectWith(path, () => serialTransport(path), true);
   }
 
-  private async connectWith(label: string, open: () => Promise<Transport>) {
+  /** Liga com um transporte já aberto (testes com a Speeduino falsa). */
+  connectTransport(label: string, t: Transport, serial = false) {
+    return this.connectWith(label, async () => t, serial);
+  }
+
+  private lastConnect?: () => Promise<void>;
+  /** Tenta de novo a última conexão (depois que o usuário escolheu o .ini). */
+  reconnect() { return this.lastConnect?.(); }
+
+  private async connectWith(label: string, open: () => Promise<Transport>, serial = false) {
     this.disconnect();
-    this.setStatus({ state: 'conectando', message: label, progress: undefined, dirty: false, demo: false });
+    this.lastConnect = () => this.connectWith(label, open, serial);
+    this.setStatus({ state: 'conectando', message: label, progress: undefined, dirty: false, demo: false, faltaIni: false });
     try {
       this.transport = await open();
       this.client = new TsClient(this.transport);
@@ -147,27 +178,47 @@ export class EcuSession extends EventEmitter {
         this.stopPolling();
       });
       // Ao religar, o simulador (e talvez a placa) ainda manda a resposta de um pedido da conexão
-      // anterior, que vinha sendo lida como assinatura (achado no simulador real). Espera ela passar
-      // e tenta a assinatura até 3 vezes.
+      // anterior, que vinha sendo lida como assinatura (achado no simulador real). Espera ela passar.
+      // Pelo cabo, a Speeduino (Arduino Mega) reinicia quando a porta abre e fica uns 2 s surda:
+      // tenta de novo algumas vezes antes de desistir.
       await new Promise((r) => setTimeout(r, 250));
-      let sig = '';
-      for (let i = 0; i < 3; i++) {
-        try { sig = await this.client.signature(); } catch { sig = ''; }
-        if (/^[\x20-\x7e]{7,}$/.test(sig)) break;
-        await new Promise((r) => setTimeout(r, 400));
+      let det: Awaited<ReturnType<typeof detectSignature>>;
+      for (let i = 0; i < (serial ? 4 : 3); i++) {
+        det = await detectSignature(this.transport, 1000);
+        if (det) break;
+        this.setStatus({ message: `${label}: esperando a ECU responder…` });
+        await new Promise((r) => setTimeout(r, serial ? 800 : 400));
       }
-      const match = sig === this.ini.signature;
-      this.setStatus({ ecuSignature: sig, signatureMatch: match });
-      if (!match) {
-        this.setStatus({ state: 'erro', message: 'O firmware da ECU não é o mesmo do arquivo .ini do app' });
-        return;
+      if (!det!) throw new Error('A ECU não respondeu. Confira o cabo, a porta escolhida e se a ECU está ligada.');
+      const sig = det.signature;
+      this.client = new TsClient(this.transport);
+      // Acha o .ini desta ECU: o nosso, a biblioteca (Speeduino), os guardados ou o servidor da rusEFI.
+      let fonte = 'app';
+      let aviso: string | undefined;
+      if (sig !== this.ini.signature) {
+        const achado = sig === this.iniPadrao.signature ? { texto: '', fonte: 'app' as const }
+          : this.pastas ? await acharIni(sig, { pastaApp: this.pastas.app, pastaCache: this.pastas.cache }) : undefined;
+        if (!achado) {
+          this.setStatus({ ecuSignature: sig, signatureMatch: false, faltaIni: true, state: 'erro',
+            message: `Não achei o arquivo .ini do firmware "${sig}". Escolha o .ini da sua ECU (o mesmo que o TunerStudio usa) e o app guarda para as próximas vezes.` });
+          this.transport.close();
+          return;
+        }
+        this.ini = achado.texto ? parseIni(achado.texto) : this.iniPadrao;
+        fonte = achado.fonte;
+        aviso = achado.aviso;
       }
+      // O .ini diz se esta versão usa envelope (a Speeduino nova também responde ao 'Q' cru,
+      // então a detecção sozinha pode enganar).
+      this.client.useIni(this.ini);
+      this.setStatus({ ecuSignature: sig, signatureMatch: true, iniSignature: this.ini.signature, family: this.ini.family, iniFonte: fonte, faltaIni: false, message: aviso });
       this.setStatus({ state: 'lendo', progress: 0 });
       this.page1 = await this.client.readPage(this.ini, 1, (d, t) => this.setStatus({ progress: d / t }));
       this.pages.clear();
       await this.readExtraPages();
       this.flash = this.page1.slice(); this.history = [];
-      this.setStatus({ state: 'conectado', progress: 1, message: undefined, undo: 0 });
+      this.resolverExpressoes();
+      this.setStatus({ state: 'conectado', progress: 1, message: aviso, undo: 0 });
       this.startPolling();
     } catch (e) {
       this.setStatus({ state: 'erro', message: (e as Error).message });
@@ -178,6 +229,7 @@ export class EcuSession extends EventEmitter {
   /** Liga na ECU falsa do modo demonstração (sem simulador e sem placa). */
   connectDemo() {
     this.disconnect();
+    this.usarIniPadrao();
     this.page1 = this.demoSaved ? this.demoSaved.slice() : demoPage(this.ini);
     this.outputs = new Uint8Array(this.ini.ochBlockSize);
     this.demo = new DemoEngine(this.ini);
@@ -211,7 +263,7 @@ export class EcuSession extends EventEmitter {
     const tick = async () => {
       if (!this.client || this.client.closed) return;
       try {
-        this.outputs = await this.client.readOutputs(0, this.ini.ochBlockSize);
+        this.outputs = await this.client.readOutputs(0, this.ini.ochBlockSize, this.ini);
         this.emit('live');
       } catch { /* uma leitura perdida não derruba a conexão */ }
       this.pollTimer = setTimeout(tick, 50); // ~20 leituras por segundo
@@ -233,12 +285,52 @@ export class EcuSession extends EventEmitter {
 
   /** Valor de um canal ao vivo, incluindo os calculados ({ a ? b : c }). */
   live(name: string, depth = 0): number | undefined {
-    if (!this.outputs) return undefined;
+    // Sem canais ainda, só a Speeduino calcula (as escalas dos eixos dependem de contas do .ini).
+    if (!this.outputs && this.ini.family !== 'speeduino') return undefined;
     const f = this.ini.outputs.get(name);
-    if (f) return f.kind === 'bits' ? decodeBits(this.outputs, f) : decodeScalar(this.outputs, f);
+    if (f) return !this.outputs ? undefined : f.kind === 'bits' ? decodeBits(this.outputs, f) : decodeScalar(this.outputs, f);
     const expr = this.ini.expressions.get(name);
     if (expr && depth < 4) return this.evaluate(expr, depth + 1);
+    if (this.ini.family === 'speeduino') {
+      if (name in SPEEDUINO_PC) return SPEEDUINO_PC[name];
+      const alias = SPEEDUINO_CANAIS[name];
+      if (alias && depth < 4) return this.evaluate(alias, depth + 1);
+    }
     return undefined;
+  }
+
+  /** Escalas e unidades que dependem de outras configurações (Speeduino: eixo de carga em kPa ou % TPS).
+   *  Recalcula depois de ler ou mudar a configuração. */
+  private resolverExpressoes() {
+    if (!this.page1 || this.ini.family !== 'speeduino') return;
+    for (const f of this.ini.constants.values()) {
+      if (f.kind === 'bits') continue;
+      if (f.scaleExpr) { const v = this.evaluate(f.scaleExpr); if (v && Number.isFinite(v)) f.scale = v; }
+      if (f.unitsExpr) {
+        const m = f.unitsExpr.match(/^bitStringValue\(\s*(\w+)\s*,\s*(\w+)\s*\)$/);
+        const lista = m && SPEEDUINO_LISTAS[m[1]];
+        if (lista) f.units = lista[Number(this.constant(m[2]) ?? 0)] ?? '';
+      }
+    }
+  }
+
+  /** Nome da tabela nesta ECU (a Speeduino usa outros nomes; ver core/traducao.ts). */
+  nomeTabela(name: string): string {
+    if (this.ini.tables.has(name) || this.ini.family !== 'speeduino') return name;
+    return SPEEDUINO_TABELAS[name]?.find((n) => this.ini.tables.has(n)) ?? name;
+  }
+
+  /** Quais destes nomes (tabelas, configurações ou canais) existem na ECU conectada. */
+  existe(names: string[]): Record<string, boolean> {
+    const out: Record<string, boolean> = {};
+    for (const n of names) out[n] = this.ini.tables.has(this.nomeTabela(n)) || this.ini.constants.has(n) || this.ini.outputs.has(n)
+      || this.ini.expressions.has(n) || (this.ini.family === 'speeduino' && n in SPEEDUINO_CANAIS);
+    return out;
+  }
+
+  /** Todas as tabelas do .ini da ECU (tela genérica para ECUs que não são a nossa). */
+  tabelasDoIni(): { name: string; title: string }[] {
+    return [...this.ini.tables.values()].filter((t) => this.ini.constants.has(t.zBins)).map((t) => ({ name: t.name, title: t.title }));
   }
 
   /** Avalia expressões simples do .ini (só nomes, números e operadores). */
@@ -266,7 +358,7 @@ export class EcuSession extends EventEmitter {
   }
 
   private async readExtraPages() {
-    if (!this.client || !this.ini.pages.find((p) => p.number === 3)) return;
+    if (!this.client || this.ini.family !== 'rusefi' || !this.ini.pages.find((p) => p.number === 3)) return;
     try { this.pages.set(3, await this.client.readPage(this.ini, 3)); } catch { /* página opcional */ }
   }
 
@@ -303,7 +395,7 @@ export class EcuSession extends EventEmitter {
 
   /** Tabela pronta para a tela: eixos, valores e canais ao vivo dos eixos. */
   table(tableName: string) {
-    const t = this.ini.tables.get(tableName);
+    const t = this.ini.tables.get(this.nomeTabela(tableName));
     if (!t || !this.page1) throw new Error(`tabela ${tableName} não encontrada`);
     const z = this.ini.constants.get(t.zBins) as ArrayField;
     const x = this.ini.constants.get(t.xBins) as ArrayField;
@@ -326,7 +418,7 @@ export class EcuSession extends EventEmitter {
 
   /** Muda células e manda na hora para a ECU (memória de trabalho). */
   async setCells(tableName: string, cells: { index: number; value: number }[]) {
-    const t = this.ini.tables.get(tableName);
+    const t = this.ini.tables.get(this.nomeTabela(tableName));
     if (!t || !this.page1 || !this.canWrite()) throw new Error('sem conexão');
     const z = this.ini.constants.get(t.zBins) as ArrayField;
     let lo = Infinity;
@@ -347,6 +439,7 @@ export class EcuSession extends EventEmitter {
     if (!f || f.kind !== 'bits' || f.page !== 1 || !this.page1 || !this.canWrite()) throw new Error(`campo ${name} indisponível`);
     const [lo, hi] = encodeBits(this.page1, f, value);
     await this.send(lo, hi);
+    this.resolverExpressoes();
     this.setStatus({ dirty: true });
   }
 
@@ -701,6 +794,7 @@ export class EcuSession extends EventEmitter {
 
   async importMap(m: { formato?: string; assinatura?: string; pagina1?: string }) {
     if (m.formato !== 'ecu-mapa' || !m.pagina1) throw new Error('Este arquivo não é um mapa do app.');
+    if (m.assinatura === this.iniPadrao.signature) this.usarIniPadrao();
     if (!this.page1) throw new Error('Conecte na ECU para abrir o mapa.');
     if (m.assinatura !== this.ini.signature) throw new Error(`O mapa é de outro firmware (${m.assinatura}). A ECU está com ${this.ini.signature}.`);
     const target = new Uint8Array(Buffer.from(m.pagina1, 'base64'));

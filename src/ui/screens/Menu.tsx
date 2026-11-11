@@ -1,4 +1,5 @@
 import type { Screen } from '../App';
+import { useDisponivel } from '../disponivel';
 
 type Tone = { bg: string; fg: string };
 const amber: Tone = { bg: '#2A2116', fg: '#FF9F1C' };
@@ -21,10 +22,16 @@ export const TILES: { tone: Tone; name: string; sub: string; go?: Screen; icon: 
   { tone: cyan, name: 'Diagnóstico', sub: 'Sensores, testes de saídas', go: 'menuDiag', icon: 'M3 12h4l2-5 4 10 2-5h6' },
 ];
 
+/** Para ECUs que não são a nossa (Speeduino): todas as tabelas do .ini dela. */
+export const TILE_TABELAS_ECU = { tone: amber, name: 'Tabelas da ECU', sub: 'Todos os mapas do .ini desta ECU', go: 'tabelasEcu' as Screen, icon: 'M3 4h18v16H3zM3 10h18M3 15h18M9 4v16M15 4v16' };
+
 export function Menu({ go }: { go: (s: Screen) => void }) {
+  const ok = useDisponivel();
+  // Com uma ECU que não é a nossa, o lugar das funções de arrancada mostra as tabelas dela.
+  const tiles = TILES.map((t) => (!t.go && ok('tabelasEcu') ? TILE_TABELAS_ECU : t)).map((t) => (t.go && !ok(t.go) ? { ...t, go: undefined, sub: 'Esta ECU não tem' } : t));
   return (
     <main className="screen" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gridTemplateRows: 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
-      {TILES.map((t) => (
+      {tiles.map((t) => (
         <button key={t.name} className="card" onClick={() => t.go && go(t.go)} disabled={!t.go}
           style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left', cursor: t.go ? 'pointer' : 'default', opacity: t.go ? 1 : 0.55 }}>
           <span style={{ width: 56, height: 56, flexShrink: 0, borderRadius: 12, background: t.tone.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -32,7 +39,7 @@ export function Menu({ go }: { go: (s: Screen) => void }) {
           </span>
           <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
             <span className="num" style={{ fontSize: 22, lineHeight: 1.05 }}>{t.name}</span>
-            <span style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.25 }}>{t.go ? t.sub : 'Fica para o fim'}</span>
+            <span style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.25 }}>{t.go ? t.sub : t.sub === 'Esta ECU não tem' ? t.sub : 'Fica para o fim'}</span>
           </span>
         </button>
       ))}

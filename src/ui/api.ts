@@ -13,6 +13,9 @@ export interface EcuStatus {
   undo?: number;
   rev?: number;
   offline?: string;
+  family?: 'rusefi' | 'speeduino' | 'outra'; // ECU conectada
+  iniFonte?: string; // de onde veio o .ini (app, guardado, biblioteca, baixado, parecido)
+  faltaIni?: boolean; // a ECU respondeu, mas falta o .ini dela
 }
 
 export interface TableData {

@@ -1,9 +1,9 @@
 {
   "name": "ecu-app",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "private": true,
   "type": "module",
-  "description": "Interface touch da nossa ECU (base rusEFI), estilo profissional",
+  "description": "Programa de ajuste da nossa ECU, rusEFI e Speeduino, estilo profissional",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

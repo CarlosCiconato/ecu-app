@@ -17,6 +17,8 @@ export interface ScalarField {
   min?: number;
   max?: number;
   digits?: number;
+  scaleExpr?: string; // escala que depende de outra configuração, ex.: {fuelLoadRes} (Speeduino)
+  unitsExpr?: string; // unidade que depende de outra configuração, ex.: bitStringValue(algorithmUnits, algorithm)
 }
 
 export interface ArrayField extends Omit<ScalarField, 'kind'> {
@@ -41,7 +43,22 @@ export type Field = ScalarField | ArrayField | BitsField;
 export interface IniPage {
   number: number; // 1..n
   identifier: number; // valor de 16 bits enviado no comando (0x0000, 0x0001, ...)
+  idBytes: number[]; // os bytes do pageIdentifier como estão no .ini (%2i)
   size: number;
+  readCommand?: string; // pageReadCommand desta página, ex.: "R%2i%2o%2c" (rusEFI) ou "p%2i%2o%2c" (Speeduino)
+  writeCommand?: string; // pageChunkWrite / pageValueWrite
+  burnCommand?: string; // "" = página que não grava na flash
+}
+
+/** Como falar com a ECU, tirado do próprio .ini (cada ECU e cada versão tem o seu). */
+export interface IniComms {
+  queryCommand: string; // "S" na rusEFI, "Q" na Speeduino
+  envelope: boolean; // messageEnvelopeFormat = msEnvelope_1.0 (pacote com tamanho + CRC)
+  ochGetCommand: string; // "O%2o%2c" na rusEFI, "r\x00\x30%2o%2c" na Speeduino
+  delayAfterPortOpen: number; // ms
+  interWriteDelay: number; // ms (protocolo antigo sem envelope: a ECU não responde à escrita)
+  blockReadTimeout: number; // ms
+  bigEndian: boolean;
 }
 
 export interface TableDef {
@@ -65,6 +82,12 @@ export interface Ini {
   defines: Map<string, string[]>;
   tables: Map<string, TableDef>;
   commands: Map<string, number[]>; // botões de ação do .ini (cmd_*), ex.: teste de bico
+  comms: IniComms;
+  family: 'rusefi' | 'speeduino' | 'outra';
+  /** Speeduino: as 15 páginas de verdade. O app enxerga todas juntas como uma "página 1" só
+   *  (uma depois da outra), e o protocolo separa de novo na hora de ler, escrever e gravar. */
+  realPages?: IniPage[];
+  pageBase?: number[]; // início de cada página de verdade dentro da página 1 virtual
 }
 
 export const TYPE_SIZE: Record<IniType, number> = {
@@ -139,10 +162,13 @@ function stripComment(line: string): string {
   return line;
 }
 
-/** Decodifica "\x00\x01" do pageIdentifier para o número de 16 bits little-endian. */
-function parsePageId(s: string): number {
-  const bytes = [...unquote(s).matchAll(/\\x([0-9a-fA-F]{2})/g)].map((m) => parseInt(m[1], 16));
-  return (bytes[0] ?? 0) | ((bytes[1] ?? 0) << 8);
+/** Decodifica uma string de comando do .ini ("\x00\x01", "\$tsCanId", letras) em bytes.
+ *  $tsCanId é o número da ECU no barramento CAN do TunerStudio: sempre 0 numa ECU ligada direto. */
+export function decodeCmd(s: string): number[] {
+  const t = unquote(s).replace(/\\?\$tsCanId/g, '\\x00');
+  const out: number[] = [];
+  t.replace(/\\x([0-9a-fA-F]{2})|(.)/g, (_, h, c) => { out.push(h ? parseInt(h, 16) : c.charCodeAt(0)); return ''; });
+  return out;
 }
 
 function parseOptions(rest: string[], defines: Map<string, string[]>): string[] {
@@ -154,7 +180,11 @@ function parseOptions(rest: string[], defines: Map<string, string[]>): string[] 
   return out;
 }
 
-export function parseIni(text: string): Ini {
+/** Símbolos dos #if do .ini que o app liga. Na Speeduino: graus Celsius e lambda (o app trabalha
+ *  em lambda e unidades métricas). O resto (placa Teensy/STM32, modo compatível...) fica desligado. */
+export const DEFAULT_SYMBOLS = ['CELSIUS', 'LAMBDA'];
+
+export function parseIni(text: string, symbols: string[] = DEFAULT_SYMBOLS): Ini {
   const ini: Ini = {
     signature: '',
     pages: [],
@@ -166,23 +196,36 @@ export function parseIni(text: string): Ini {
     defines: new Map(),
     tables: new Map(),
     commands: new Map(),
+    comms: { queryCommand: 'S', envelope: false, ochGetCommand: 'O%2o%2c', delayAfterPortOpen: 0, interWriteDelay: 0, blockReadTimeout: 2000, bigEndian: false },
+    family: 'outra',
   };
+  const sym = new Set(symbols);
+  let readCmds: string[] = [];
+  let writeCmds: string[] = [];
+  let chunkCmds: string[] = [];
+  let burnCmds: string[] = [];
+  let lastStart = 0; // offset do campo anterior: "lastOffset" no .ini = mesmo lugar do campo de cima (outra unidade, ex.: AFR e lambda)
   let section = '';
   let page = 1;
-  let pageIds: number[] = [];
+  let pageIds: number[][] = [];
   let pageSizes: number[] = [];
   let table: TableDef | undefined;
-  // Pilha de #if: o app não define nenhum símbolo, então vale o ramo #else.
-  const cond: boolean[] = [];
-  const active = () => cond.every(Boolean);
+  // Pilha de #if/#elif/#else: vale o ramo cujo símbolo está ligado (DEFAULT_SYMBOLS ou #set).
+  // Cada nível guarda [ramo atual ativo, algum ramo já foi usado].
+  const cond: [boolean, boolean][] = [];
+  const active = () => cond.every((c) => c[0]);
 
   for (const raw of text.split(/\r?\n/)) {
     const trimmed = raw.trim();
     if (trimmed.startsWith('#')) {
       const [dir, ...rest] = trimmed.split(/\s+/);
-      if (dir === '#if') cond.push(false);
-      else if (dir === '#else') cond[cond.length - 1] = !cond[cond.length - 1];
+      const test = (r: string | undefined) => (r?.startsWith('!') ? !sym.has(r.slice(1)) : sym.has(r ?? ''));
+      if (dir === '#if') { const v = test(rest[0]); cond.push([v, v]); }
+      else if (dir === '#elif' && cond.length) { const c = cond[cond.length - 1]; const v = !c[1] && test(rest[0]); c[0] = v; c[1] = c[1] || v; }
+      else if (dir === '#else' && cond.length) { const c = cond[cond.length - 1]; c[0] = !c[1]; c[1] = true; }
       else if (dir === '#endif') cond.pop();
+      else if (dir === '#set' && active() && rest[0]) sym.add(rest[0]);
+      else if (dir === '#unset' && active() && rest[0]) sym.delete(rest[0]);
       else if (dir === '#define' && active()) {
         const def = trimmed.slice('#define'.length).trim();
         const eq = def.indexOf('=');
@@ -206,16 +249,29 @@ export function parseIni(text: string): Ini {
 
     if (section === 'MegaTune' || section === 'TunerStudio') {
       if (key === 'signature' && !ini.signature) ini.signature = unquote(value);
+      if (key === 'queryCommand' && section === 'MegaTune') ini.comms.queryCommand = unquote(value);
       continue;
     }
 
     if (section === 'Constants') {
-      if (key === 'page') { page = Number(value); continue; }
-      if (key === 'pageIdentifier') { pageIds = splitCsv(value).map(parsePageId); continue; }
+      if (key === 'page') { page = Number(value); lastStart = 0; continue; }
+      if (key === 'pageIdentifier') { pageIds = splitCsv(value).map(decodeCmd); continue; }
       if (key === 'pageSize') { pageSizes = splitCsv(value).map(Number); continue; }
       if (key === 'blockingFactor') { ini.blockingFactor = Number(value); continue; }
+      if (key === 'pageReadCommand') { readCmds = splitCsv(value).map(unquote); continue; }
+      if (key === 'pageValueWrite') { writeCmds = splitCsv(value).map(unquote); continue; }
+      if (key === 'pageChunkWrite') { chunkCmds = splitCsv(value).map(unquote); continue; }
+      if (key === 'burnCommand') { burnCmds = splitCsv(value).map(unquote); continue; }
+      if (key === 'endianness') { ini.comms.bigEndian = value.trim() === 'big'; continue; }
+      if (key === 'messageEnvelopeFormat') { ini.comms.envelope = /msEnvelope/.test(value); continue; }
+      if (key === 'delayAfterPortOpen') { ini.comms.delayAfterPortOpen = Number(value) || 0; continue; }
+      if (key === 'interWriteDelay') { ini.comms.interWriteDelay = Number(value) || 0; continue; }
+      if (key === 'blockReadTimeout') { ini.comms.blockReadTimeout = Number(value) || 2000; continue; }
       const parts = splitCsv(value);
       const kind = parts[0];
+      if (parts[2]?.trim() === 'lastOffset') parts[2] = String(lastStart);
+      if (kind === 'string') continue;
+      if (kind === 'scalar' || kind === 'array' || kind === 'bits') lastStart = Number(parts[2]) || 0;
       if (kind === 'scalar' || kind === 'array') {
         const type = parts[1] as IniType;
         const offset = Number(parts[2]);
@@ -223,7 +279,7 @@ export function parseIni(text: string): Ini {
         let cols = 1;
         let i = 3;
         if (kind === 'array') {
-          const dim = parts[3].match(/\[(\d+)(?:x(\d+))?\]/);
+          const dim = parts[3].match(/\[\s*(\d+)\s*(?:x\s*(\d+))?\s*\]/);
           if (dim) {
             if (dim[2]) { cols = Number(dim[1]); rows = Number(dim[2]); }
             else rows = Number(dim[1]);
@@ -239,6 +295,9 @@ export function parseIni(text: string): Ini {
           max: num(parts[i + 4], NaN),
           digits: num(parts[i + 5], 0),
         };
+        const ex = (t?: string) => { const v = t?.trim(); return v?.startsWith('{') && resolveExpr(v.slice(1, -1).trim()) === undefined && !/^\{[-+*/0-9.\s()]+\}$/.test(v) ? v.slice(1, -1).trim() : undefined; };
+        if (ex(parts[i + 1])) f.scaleExpr = ex(parts[i + 1]);
+        if (ex(parts[i])) f.unitsExpr = ex(parts[i]);
         if (kind === 'array') ini.constants.set(key, { ...f, kind: 'array', rows, cols });
         else ini.constants.set(key, f);
       } else if (kind === 'bits') {
@@ -254,6 +313,7 @@ export function parseIni(text: string): Ini {
 
     if (section === 'OutputChannels') {
       if (key === 'ochBlockSize') { ini.ochBlockSize = Number(value); continue; }
+      if (key === 'ochGetCommand') { ini.comms.ochGetCommand = unquote(value); continue; }
       if (value.startsWith('{')) { ini.expressions.set(key, value.slice(1, -1).trim()); continue; }
       const parts = splitCsv(value);
       if (parts[0] === 'scalar') {
@@ -283,11 +343,47 @@ export function parseIni(text: string): Ini {
     }
   }
 
-  ini.pages = pageSizes.map((size, i) => ({ number: i + 1, identifier: pageIds[i] ?? i, size }));
+  ini.pages = pageSizes.map((size, i) => {
+    const idBytes = pageIds[i] ?? [i & 0xff, (i >> 8) & 0xff];
+    return {
+      number: i + 1, idBytes, size,
+      identifier: (idBytes[0] ?? 0) | ((idBytes[1] ?? 0) << 8),
+      readCommand: readCmds[i], writeCommand: chunkCmds[i] || writeCmds[i], burnCommand: burnCmds[i],
+    };
+  });
+  ini.family = /^rusEFI/i.test(ini.signature) ? 'rusefi' : /^speeduino/i.test(ini.signature) ? 'speeduino' : 'outra';
+  if (ini.family === 'speeduino' && ini.pages.length > 1) juntarPaginas(ini);
   for (const m of text.matchAll(/^\s*(cmd_\w+)\s*=\s*"([^"]*)"/gm)) {
     const bytes: number[] = [];
     m[2].replace(/\\x([0-9a-fA-F]{2})|(.)/g, (_, h, c) => { bytes.push(h ? parseInt(h, 16) : c.charCodeAt(0)); return ''; });
     ini.commands.set(m[1], bytes);
   }
   return ini;
+}
+
+/** Junta as páginas numa página 1 virtual (ver Ini.realPages). Os campos passam a apontar para
+ *  o lugar dentro dela, então o resto do app (que trabalha com a página 1) não muda. */
+export function juntarPaginas(ini: Ini) {
+  const base: number[] = [];
+  let total = 0;
+  for (const p of ini.pages) { base.push(total); total += p.size; }
+  for (const f of ini.constants.values()) {
+    f.offset += base[f.page - 1] ?? 0;
+    f.page = 1;
+  }
+  ini.realPages = ini.pages;
+  ini.pageBase = base;
+  ini.pages = [{ number: 1, identifier: 0, idBytes: [0, 0], size: total }];
+}
+
+/** Separa um trecho da página 1 virtual nos pedaços de cada página de verdade. */
+export function pedacosReais(ini: Ini, lo: number, len: number): { page: IniPage; offset: number; count: number; at: number }[] {
+  if (!ini.realPages || !ini.pageBase) return [];
+  const out = [];
+  for (let i = 0; i < ini.realPages.length; i++) {
+    const a = Math.max(lo, ini.pageBase[i]);
+    const b = Math.min(lo + len, ini.pageBase[i] + ini.realPages[i].size);
+    if (b > a) out.push({ page: ini.realPages[i], offset: a - ini.pageBase[i], count: b - a, at: a - lo });
+  }
+  return out;
 }

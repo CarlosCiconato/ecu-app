@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { call, setLog, useStatus } from '../api';
 import type { Screen } from '../App';
 import { openFtmLater } from './ArquivoFtm';
+import { EscolherIni } from './Conexao';
 import { fromCsv, openLogFile } from './Datalogger';
 
 type F = { kind: string; name: string; size: number; mtime: number };
@@ -102,6 +103,8 @@ export function Inicio({ go }: { go: (s: Screen) => void }) {
                 <span className="dot" style={{ background: '#5a5e66' }} />{p.path.replace('/dev/', '')}<small>USB · conectar</small>
               </button>
             ))}
+            {s.state === 'erro' && s.message && <div className="notice err" style={{ fontSize: 13 }}>{s.message}</div>}
+            <EscolherIni />
             {(!on || s.offline) && ports.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13, textAlign: 'center', padding: 14 }}>Nenhuma ECU encontrada no USB</div>}
           </div>
           {on && !s.offline

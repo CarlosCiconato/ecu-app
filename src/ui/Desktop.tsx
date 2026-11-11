@@ -9,7 +9,8 @@ import { LOG_CH } from './screens/Datalogger';
 import { fmt } from './format';
 import { usePrefs } from './prefs';
 import { BipeAlerta, screenTitle, ScreenView, stateColor, type Screen } from './App';
-import { TILES } from './screens/Menu';
+import { TILES, TILE_TABELAS_ECU } from './screens/Menu';
+import { useDisponivel } from './disponivel';
 import { SUBMENUS } from './screens/SubMenu';
 import { GAUGES } from './screens/Painel';
 
@@ -19,6 +20,7 @@ const GROUPS: Group[] = [
   { id: 'conexao', name: 'Conexão', icon: 'M7 7h10v6a5 5 0 0 1-10 0zM10 3v4M14 3v4M12 18v3' },
   ...TILES.filter((t) => t.go).flatMap((t) => [{ id: t.go as Screen, name: t.name, icon: t.icon },
     ...(t.go === 'painel' ? [{ id: 'datalogger' as Screen, name: 'Datalogger', icon: 'M3 3v18h18M7 15l3-4 3 3 5-7' }] : [])]),
+  { id: TILE_TABELAS_ECU.go, name: TILE_TABELAS_ECU.name, icon: TILE_TABELAS_ECU.icon },
 ];
 
 const LIVE_KEYS = ['rpm', 'boost', 'lambda', 'inj', 'duty', 'adv', 'clt', 'iat', 'tps', 'batt', 'oil'];
@@ -78,6 +80,7 @@ function allFunctions(): { go: Screen; label: string; where: string }[] {
 
 export function Desktop() {
   const s = useStatus();
+  const ok = useDisponivel();
   const [names, setNames] = useState(() => load('dk.menuAberto', false));
   const [subOpen, setSubOpen] = useState(() => load('dk.submenu', true));
   const [drop, setDrop] = useState<string>(); // menu aberto da barra superior
@@ -250,7 +253,7 @@ export function Desktop() {
       <div className="dk-body">
         {/* 3 - Barra lateral com os grupos */}
         <nav className={`dk-rail ${names ? 'wide' : ''}`}>
-          {GROUPS.map((g) => (
+          {GROUPS.filter((g) => ok(g.id)).map((g) => (
             <button key={g.id} className={group === g.id ? 'on' : ''} onClick={() => pickGroup(g)} title={g.name}>
               <Icon d={g.icon} />{names && <span>{g.name}</span>}
             </button>
@@ -282,7 +285,7 @@ export function Desktop() {
                 onClick={() => { setSoAtivas(!soAtivas); save('dk.soAtivas', !soAtivas); }}><Icon d="M3 5h18l-7 8v6l-4-2v-4z" size={15} /></button>
             </div>
             <div className="dk-sublist">
-              {menu.items.filter((i) => (!soAtivas || ativa(i.go)) && (!busca || (i.label + ' ' + i.sub).toLowerCase().includes(busca.toLowerCase()))).map((i) => (
+              {menu.items.filter((i) => ok(i.go) && (!soAtivas || ativa(i.go)) && (!busca || (i.label + ' ' + i.sub).toLowerCase().includes(busca.toLowerCase()))).map((i) => (
                 <button key={i.go} className={`${active === i.go ? 'on' : ''} ${ativa(i.go) ? '' : 'off'}`} onClick={() => go(i.go)}
                   title={ATIVA[i.go] ? (ativa(i.go) ? 'Ligada neste mapa · botão direito para desligar' : 'Desligada neste mapa · botão direito para ligar') : undefined}
                   onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setItemMenu({ x: e.clientX, y: e.clientY, go: i.go }); }}>

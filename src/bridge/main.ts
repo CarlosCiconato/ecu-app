@@ -9,16 +9,18 @@ import { spawn } from 'node:child_process';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { parseIni } from '../core/ini.js';
 import { EcuSession, listSerialPorts } from './ecu.js';
+import { guardarIni, assinaturaDoTexto } from '../core/biblioteca.js';
 
 const root = process.env.ECU_ROOT ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const iniPath = process.env.ECU_INI ?? path.join(root, 'ini/simulador.ini');
 const port = Number(process.env.PORT ?? 8600);
 const ini = parseIni(fs.readFileSync(iniPath, 'latin1'));
-const ecu = new EcuSession(ini);
-console.log(`[ponte] .ini: ${path.basename(iniPath)} · assinatura ${ini.signature}`);
-
 // Pasta dos arquivos do usuário (mapas e logs), como a tela inicial dos programas profissionais.
 const userDir = process.env.ECU_FILES ?? path.join(os.homedir(), 'Documents', 'ECU Arquivos');
+// .ini de outras ECUs: a biblioteca vem com o app (ini/biblioteca); os baixados e escolhidos ficam com o usuário.
+const iniCache = path.join(userDir, 'ini');
+const ecu = new EcuSession(ini, { app: path.dirname(iniPath), cache: iniCache });
+console.log(`[ponte] .ini: ${path.basename(iniPath)} · assinatura ${ini.signature}`);
 const KINDS: Record<string, string> = { mapas: 'Mapas', logs: 'Logs' };
 function kindDir(kind: string) {
   const d = path.join(userDir, KINDS[kind] ?? 'Outros');
@@ -113,10 +115,21 @@ wss.on('connection', (ws) => {
           reply(true);
           await ecu.connectSerial(String(msg.path));
           break;
+        case 'iniArquivo': {
+          // O usuário escolheu o .ini da ECU dele: guarda e tenta conectar de novo.
+          const texto = Buffer.from(String(msg.data), 'base64').toString('latin1');
+          if (!assinaturaDoTexto(texto)) throw new Error('Este arquivo não parece um .ini do TunerStudio (não tem "signature").');
+          guardarIni(iniCache, texto);
+          reply(assinaturaDoTexto(texto));
+          await ecu.reconnect();
+          break;
+        }
         case 'demo': ecu.connectDemo(); reply(true); break;
         case 'disconnect': ecu.disconnect(); reply(true); break;
         case 'subscribe': subs.set(ws, (msg.names as string[]) ?? []); reply(true); break;
         case 'table': reply(ecu.table(String(msg.name))); break;
+        case 'existe': reply(ecu.existe((msg.names as string[]) ?? [])); break;
+        case 'tabelasIni': reply(ecu.tabelasDoIni()); break;
         case 'constants': reply(Object.fromEntries((msg.names as string[]).map((n) => [n, ecu.constant(n) ?? null]))); break;
         case 'setCells': reply(await ecu.setCells(String(msg.name), msg.cells as { index: number; value: number }[])); break;
         case 'setBits': await ecu.setBits(String(msg.name), Number(msg.value)); reply(true); break;

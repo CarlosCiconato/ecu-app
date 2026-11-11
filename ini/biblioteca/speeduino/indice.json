@@ -1,0 +1,174 @@
+{
+ "speeduino 201607": {
+  "arquivo": "speeduino-201607.ini.gz",
+  "versao": "201607"
+ },
+ "speeduino 201608": {
+  "arquivo": "speeduino-201608.ini.gz",
+  "versao": "201608"
+ },
+ "speeduino 201609": {
+  "arquivo": "speeduino-201609.ini.gz",
+  "versao": "201609"
+ },
+ "speeduino 201610": {
+  "arquivo": "speeduino-201610.ini.gz",
+  "versao": "201610"
+ },
+ "speeduino 201611": {
+  "arquivo": "speeduino-201611.ini.gz",
+  "versao": "201611"
+ },
+ "speeduino 201612": {
+  "arquivo": "speeduino-201612.ini.gz",
+  "versao": "201612"
+ },
+ "speeduino 201701": {
+  "arquivo": "speeduino-201701.ini.gz",
+  "versao": "201701"
+ },
+ "speeduino 201702": {
+  "arquivo": "speeduino-201702.ini.gz",
+  "versao": "201702"
+ },
+ "speeduino 201703": {
+  "arquivo": "speeduino-201703.ini.gz",
+  "versao": "201703"
+ },
+ "speeduino 201704": {
+  "arquivo": "speeduino-201704.ini.gz",
+  "versao": "201704"
+ },
+ "speeduino 201705": {
+  "arquivo": "speeduino-201705.ini.gz",
+  "versao": "201705"
+ },
+ "speeduino 201706": {
+  "arquivo": "speeduino-201706.ini.gz",
+  "versao": "201706"
+ },
+ "speeduino 201707": {
+  "arquivo": "speeduino-201707.ini.gz",
+  "versao": "201707"
+ },
+ "speeduino 201708": {
+  "arquivo": "speeduino-201708.ini.gz",
+  "versao": "201708"
+ },
+ "speeduino 201709": {
+  "arquivo": "speeduino-201709.ini.gz",
+  "versao": "201709"
+ },
+ "speeduino 201710": {
+  "arquivo": "speeduino-201710.ini.gz",
+  "versao": "201710"
+ },
+ "speeduino 201711": {
+  "arquivo": "speeduino-201711.ini.gz",
+  "versao": "201712"
+ },
+ "speeduino 201712": {
+  "arquivo": "speeduino-201712.ini.gz",
+  "versao": "201711"
+ },
+ "speeduino 201802": {
+  "arquivo": "speeduino-201802.ini.gz",
+  "versao": "201802"
+ },
+ "speeduino 201804": {
+  "arquivo": "speeduino-201804.ini.gz",
+  "versao": "201804"
+ },
+ "speeduino 201805": {
+  "arquivo": "speeduino-201805.ini.gz",
+  "versao": "201805"
+ },
+ "speeduino 201806": {
+  "arquivo": "speeduino-201806.ini.gz",
+  "versao": "201806"
+ },
+ "speeduino 201808": {
+  "arquivo": "speeduino-201808.ini.gz",
+  "versao": "201808"
+ },
+ "speeduino 201810": {
+  "arquivo": "speeduino-201810.ini.gz",
+  "versao": "201810"
+ },
+ "speeduino 201902": {
+  "arquivo": "speeduino-201902.ini.gz",
+  "versao": "201902"
+ },
+ "speeduino 201903": {
+  "arquivo": "speeduino-201903.ini.gz",
+  "versao": "201903"
+ },
+ "speeduino 201905": {
+  "arquivo": "speeduino-201905.ini.gz",
+  "versao": "201905"
+ },
+ "speeduino 201909": {
+  "arquivo": "speeduino-201909.ini.gz",
+  "versao": "201909"
+ },
+ "speeduino 201911": {
+  "arquivo": "speeduino-201911.ini.gz",
+  "versao": "201911"
+ },
+ "speeduino 202002": {
+  "arquivo": "speeduino-202002.ini.gz",
+  "versao": "202002"
+ },
+ "speeduino 202005": {
+  "arquivo": "speeduino-202005.ini.gz",
+  "versao": "202005"
+ },
+ "speeduino 202008": {
+  "arquivo": "speeduino-202008.ini.gz",
+  "versao": "202008"
+ },
+ "speeduino 202012": {
+  "arquivo": "speeduino-202012.ini.gz",
+  "versao": "202012"
+ },
+ "speeduino 202103": {
+  "arquivo": "speeduino-202103.ini.gz",
+  "versao": "202103"
+ },
+ "speeduino 202108": {
+  "arquivo": "speeduino-202108.ini.gz",
+  "versao": "202108"
+ },
+ "speeduino 202201": {
+  "arquivo": "speeduino-202201.ini.gz",
+  "versao": "202201"
+ },
+ "speeduino 202202": {
+  "arquivo": "speeduino-202202.ini.gz",
+  "versao": "202202"
+ },
+ "speeduino 202207": {
+  "arquivo": "speeduino-202207.ini.gz",
+  "versao": "202207.2"
+ },
+ "speeduino 202305": {
+  "arquivo": "speeduino-202305.ini.gz",
+  "versao": "202305"
+ },
+ "speeduino 202310": {
+  "arquivo": "speeduino-202310.ini.gz",
+  "versao": "202310"
+ },
+ "speeduino 202402": {
+  "arquivo": "speeduino-202402.ini.gz",
+  "versao": "202402.3"
+ },
+ "speeduino 202501": {
+  "arquivo": "speeduino-202501.ini.gz",
+  "versao": "202501.7"
+ },
+ "speeduino 202504-dev": {
+  "arquivo": "speeduino-202504-dev.ini.gz",
+  "versao": "master"
+ }
+}

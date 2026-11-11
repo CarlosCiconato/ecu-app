@@ -3,6 +3,7 @@ import type { Screen } from '../App';
 import { CURVAS } from './Curva';
 import { TABELAS } from './MapaInjecao';
 import { FORMS } from './Configuracoes';
+import { useDisponivel } from '../disponivel';
 
 type Item = { label: string; sub: string; go: Screen };
 const tabela = (id: string, sub = ''): Item => ({ label: TABELAS[id].title, sub, go: `t_${id}` as Screen });
@@ -95,9 +96,10 @@ export const SUBMENUS: Record<string, { title: string; items: Item[] }> = {
 
 export function SubMenu({ id, go }: { id: string; go: (s: Screen) => void }) {
   const m = SUBMENUS[id];
+  const ok = useDisponivel();
   return (
     <main className="screen" style={{ overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gridAutoRows: '96px', gap: 12, alignContent: 'start', paddingTop: 10 }}>
-      {m.items.map((it) => (
+      {m.items.filter((it) => ok(it.go)).map((it) => (
         <button key={it.label} className="card" onClick={() => go(it.go)}
           style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: 'pointer' }}>
           <span style={{ display: 'flex', flexDirection: 'column', gap: 4, flexGrow: 1 }}>
