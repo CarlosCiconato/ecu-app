@@ -42,10 +42,15 @@ export function Conexao() {
   const [port, setPort] = useState('29001');
   const [ports, setPorts] = useState<{ path: string; label: string }[]>([]);
   const [serial, setSerial] = useState('');
-  const scan = () => call<{ path: string; label: string }[]>('serialPorts').then((p) => {
-    setPorts(p);
-    setSerial((cur) => (p.some((x) => x.path === cur) ? cur : (p.find((x) => /usbmodem|usbserial|wchusb|COM\d/i.test(x.path)) ?? p[0])?.path ?? ''));
-  }).catch(() => setPorts([]));
+  const [busca, setBusca] = useState<{ estado: 'procurando' | 'ok' | 'erro'; texto?: string }>();
+  const scan = () => {
+    setBusca({ estado: 'procurando' });
+    return call<{ path: string; label: string }[]>('serialPorts').then((p) => {
+      setPorts(p);
+      setSerial((cur) => (cur && !p.length ? cur : p.some((x) => x.path === cur) ? cur : (p.find((x) => /usbmodem|usbserial|wchusb|COM\d/i.test(x.path)) ?? p[0])?.path ?? ''));
+      setBusca({ estado: 'ok', texto: p.length ? `${p.length} porta${p.length > 1 ? 's' : ''} encontrada${p.length > 1 ? 's' : ''} (${new Date().toLocaleTimeString()}).` : undefined });
+    }).catch((e) => { setPorts([]); setBusca({ estado: 'erro', texto: `Não consegui listar as portas: ${(e as Error).message}` }); });
+  };
   useEffect(() => { if (mode === 'usb' && s.bridgeUp) void scan(); }, [mode, s.bridgeUp]);
   const busy = s.state === 'conectando' || s.state === 'lendo';
   const connected = s.state === 'conectado';
@@ -77,11 +82,22 @@ export function Conexao() {
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
             <span className="label">Porta do cabo</span>
             <select className="field" value={serial} onChange={(e) => setSerial(e.target.value)}>
-              {ports.length === 0 && <option value="">Nenhuma placa encontrada</option>}
+              {ports.length === 0 && !serial && <option value="">Nenhuma placa encontrada</option>}
+              {serial && !ports.some((p) => p.path === serial) && <option value={serial}>{serial} · digitada</option>}
               {ports.map((p) => <option key={p.path} value={p.path}>{p.path.replace('/dev/', '')} · {p.label}</option>)}
             </select>
           </label>
-          <button className="btn" style={{ height: 48 }} onClick={scan}>Procurar</button>
+          <button className="btn" style={{ height: 48 }} disabled={busca?.estado === 'procurando'} onClick={() => void scan()}>{busca?.estado === 'procurando' ? 'Procurando…' : 'Procurar'}</button>
+        </div>}
+        {mode === 'usb' && <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span className="label">Ou digite a porta (ex.: COM3 ou /dev/cu.usbserial-110)</span>
+          <input className="field" value={serial} placeholder="COM3" onChange={(e) => setSerial(e.target.value.trim())} />
+        </label>}
+        {mode === 'usb' && busca?.estado === 'erro' && <div className="notice err">{busca.texto}</div>}
+        {mode === 'usb' && busca?.estado === 'ok' && busca.texto && <div className="notice ok">{busca.texto}</div>}
+        {mode === 'usb' && busca?.estado === 'ok' && !ports.length && <div className="notice err">
+          Nenhuma porta USB apareceu. Confira: o cabo é de dados (não só de carga); o Arduino IDE e o TunerStudio estão fechados;
+          Arduino Mega paralelo (chip CH340) precisa do driver CH340 no Windows e em Mac antigo. Se o Arduino IDE enxerga a porta, digite o nome dela acima.
         </div>}
         {mode === 'demo' && <div className="notice ok">Os sensores andam sozinhos (lenta, acelerada, puxada até o corte). Você pode editar e gravar o mapa; a gravação fica guardada até fechar o app.</div>}
         <span style={{ flexGrow: 1 }} />

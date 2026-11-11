@@ -40,8 +40,17 @@ export function Inicio({ go }: { go: (s: Screen) => void }) {
   useEffect(() => {
     if (!s.bridgeUp) return;
     void load();
-    call<{ path: string; label: string }[]>('serialPorts').then(setPorts, () => setPorts([]));
   }, [s.bridgeUp]);
+  // Procura a ECU no USB a cada 3 s enquanto não há ECU ligada (a placa pode ser ligada depois de abrir o app).
+  const [erroPortas, setErroPortas] = useState<string>();
+  const procurar = () => call<{ path: string; label: string }[]>('serialPorts')
+    .then((p) => { setPorts(p); setErroPortas(undefined); }, (e) => { setPorts([]); setErroPortas((e as Error).message); });
+  useEffect(() => {
+    if (!s.bridgeUp || (on && !s.offline)) return;
+    void procurar();
+    const t = setInterval(() => void procurar(), 3000);
+    return () => clearInterval(t);
+  }, [s.bridgeUp, on, s.offline]);
 
   const err = (e: unknown) => setMsg((e as Error).message);
   async function openMap(f: F) {
@@ -105,7 +114,8 @@ export function Inicio({ go }: { go: (s: Screen) => void }) {
             ))}
             {s.state === 'erro' && s.message && <div className="notice err" style={{ fontSize: 13 }}>{s.message}</div>}
             <EscolherIni />
-            {(!on || s.offline) && ports.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13, textAlign: 'center', padding: 14 }}>Nenhuma ECU encontrada no USB</div>}
+            {(!on || s.offline) && ports.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13, textAlign: 'center', padding: 14 }}>Nenhuma ECU encontrada no USB<br />(procurando sozinho a cada 3 s)</div>}
+            {erroPortas && <div className="notice err" style={{ fontSize: 13 }}>Não consegui listar as portas USB: {erroPortas}</div>}
           </div>
           {on && !s.offline
             ? <button className="btn" onClick={() => call('disconnect')}>Desconectar</button>
