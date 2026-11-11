@@ -1,6 +1,6 @@
 {
   "name": "ecu-app",
-  "version": "0.32.1",
+  "version": "0.32.2",
   "private": true,
   "type": "module",
   "description": "Programa de ajuste da nossa ECU, rusEFI e Speeduino, estilo profissional",
@@ -13,7 +13,7 @@
     "bundle:bridge": "esbuild src/bridge/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=build/bridge.mjs --external:serialport --banner:js=\"import{createRequire as __cr}from'module';const require=__cr(import.meta.url);\"",
     "app": "npm run build && npm run bundle:bridge && electron .",
     "dist:mac": "npm run build && npm run bundle:bridge && electron-builder --mac dmg --x64",
-    "dist:win": "npm run build && npm run bundle:bridge && electron-builder --win nsis --x64 -c.npmRebuild=false"
+    "dist:win": "npm run build && npm run bundle:bridge && electron-builder --win nsis --x64"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
@@ -46,7 +46,8 @@
       "ini/**",
       "build/bridge.mjs",
       "electron/**",
-      "package.json"
+      "package.json",
+      "!node_modules/@serialport/bindings-cpp/build/**"
     ],
     "directories": {
       "output": "release"
@@ -67,6 +68,7 @@
       "allowToChangeInstallationDirectory": true,
       "artifactName": "ECU-${version}-windows-setup.${ext}",
       "shortcutName": "ECU"
-    }
+    },
+    "npmRebuild": false
   }
 }
