@@ -18,6 +18,7 @@ import { PainelCfg, TelaSom, Unidades, Versao } from './screens/ConfigInterface'
 import { Curva, CURVAS } from './screens/Curva';
 import { SubMenu, SUBMENUS } from './screens/SubMenu';
 import { CurvaIniTela, DialogoIniTela, ROTULOS_INI, TabelaIni, TabelasEcu } from './screens/TabelasEcu';
+import { CalibracaoIni } from './screens/Calibracao';
 import { Menu } from './screens/Menu';
 import { Ltft } from './screens/Ltft';
 import { Testes } from './screens/Testes';
@@ -29,7 +30,7 @@ import { Tema, aplicarTema } from './screens/Tema';
 /** No Mac/PC (janela do app) usa o layout de computador, no estilo dos programas profissionais. */
 export const isDesktop = new URLSearchParams(location.search).has('desktop');
 
-export type Screen = 'conexao' | 'menu' | 'painel' | 'mapa' | 'ignicao' | 'alertas' | 'ajustes' | 'motor' | 'outras' | 'sensores' | 'diagnostico' | 'favoritos' | 'interface' | 'telaSom' | 'painelCfg' | 'versao' | 'menuInjecao' | 'menuIgnicao' | 'menuOutras' | 'turbo' | 'senhas' | 'menuInterface' | 'ftm' | 'mapaPadrao' | 'ltft' | 'testes' | 'sinalRpm' | 'inicio' | 'datalogger' | 'tema' | 'tabelasEcu' | `menu${string}` | `c_${string}` | `t_${string}` | `f_${string}` | `d_${string}`;
+export type Screen = 'conexao' | 'menu' | 'painel' | 'mapa' | 'ignicao' | 'alertas' | 'ajustes' | 'motor' | 'outras' | 'sensores' | 'diagnostico' | 'favoritos' | 'interface' | 'telaSom' | 'painelCfg' | 'versao' | 'menuInjecao' | 'menuIgnicao' | 'menuOutras' | 'turbo' | 'senhas' | 'menuInterface' | 'ftm' | 'mapaPadrao' | 'ltft' | 'testes' | 'sinalRpm' | 'inicio' | 'datalogger' | 'tema' | 'tabelasEcu' | `menu${string}` | `c_${string}` | `t_${string}` | `f_${string}` | `d_${string}` | `k_${string}`;
 export const TITLES: Record<string, string> = {
   conexao: 'Conexão com a ECU', menu: 'Menu principal', painel: 'Painel de instrumentos', mapa: 'Mapa principal de injeção', ignicao: 'Mapa principal de ignição', alertas: 'Alertas', ajustes: 'Gerenciador de ajustes', motor: 'Características do motor', sinalRpm: 'Sinal de RPM', outras: 'Corte de rotação e largada', sensores: 'Sensores e calibração', diagnostico: 'Diagnóstico', favoritos: 'Favoritos', turbo: 'Controle de turbo', senhas: 'Senhas', interface: 'Unidades de medida', telaSom: 'Tela, som e tela inicial', painelCfg: 'Configuração do painel', versao: 'Versões, odômetro e horímetro', ftm: 'Mapas (.ftm)', mapaPadrao: 'Mapa padrão', ltft: 'Correção de longo prazo', tabelasEcu: 'Funções da ECU', testes: 'Teste de saídas', inicio: 'Tela inicial', datalogger: 'Datalogger', tema: 'Tema do programa',
 };
@@ -50,7 +51,7 @@ export function stateColor(state: string) {
 }
 
 export function screenTitle(screen: Screen): string {
-  return TITLES[screen] ?? SUBMENUS[screen]?.title ?? (/^[tcd]_ini_/.test(screen) ? ROTULOS_INI[screen] ?? screen.slice(6) : screen.startsWith('t_') ? TABELAS[screen.slice(2)]?.title : screen.startsWith('f_') ? FORMS[screen.slice(2)]?.title : CURVAS[screen.slice(2)]?.title) ?? screen;
+  return TITLES[screen] ?? SUBMENUS[screen]?.title ?? (/^[tcdk]_ini_/.test(screen) ? ROTULOS_INI[screen] ?? screen.slice(6) : screen.startsWith('t_') ? TABELAS[screen.slice(2)]?.title : screen.startsWith('f_') ? FORMS[screen.slice(2)]?.title : CURVAS[screen.slice(2)]?.title) ?? screen;
 }
 
 function TopBar({ screen, go }: { screen: Screen; go: (s: Screen) => void }) {
@@ -142,6 +143,7 @@ export function ScreenView({ screen, go: setScreen }: { screen: Screen; go: (s: 
       {screen.startsWith('t_ini_') && <TabelaIni key={screen} nome={screen.slice(6)} Editor={MapaTabela} />}
       {screen.startsWith('d_ini_') && <DialogoIniTela key={screen} id={screen.slice(6)} go={setScreen} />}
       {screen.startsWith('c_ini_') && <CurvaIniTela key={screen} id={screen.slice(6)} />}
+      {screen.startsWith('k_ini_') && <CalibracaoIni key={screen} id={screen.slice(6)} />}
       {SUBMENUS[screen] && <SubMenu id={screen} go={setScreen} />}
       {screen.startsWith('c_') && !screen.startsWith('c_ini_') && CURVAS[screen.slice(2)] && <Curva key={screen} id={screen.slice(2)} />}
     </>

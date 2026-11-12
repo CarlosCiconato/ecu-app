@@ -79,7 +79,15 @@ export interface DialogDef {
   id: string; title: string;
   fields: { label: string; name?: string; cond?: string }[];
   panels: { id: string; cond?: string }[];
-  commands: { label: string; cmd: string; cond?: string }[];
+  commands: { label: string; cmd: string; cond?: string; flag?: string }[];
+}
+/** Calibração de sensor do .ini (referenceTable, ex.: std_ms2gentherm termistores, std_ms2geno2 sonda). */
+export interface Calibracao {
+  id: string; title: string;
+  tabelas: { idx: number; nome: string; min?: number; max?: number; padrao?: number }[];
+  adcCount: number; bytesPerAdc: number; scale: number;
+  termistores: { nome: string; bias: number; pontos: [number, number][] }[]; // pontos = [°C, ohms]
+  linear?: { xLo: number; xHi: number; yLo: number; yHi: number; xUnit: string; yUnit: string };
 }
 export interface CurveDef { id: string; title: string; xLabel: string; yLabel: string; x: string; xLive?: string; y: string }
 
@@ -96,6 +104,7 @@ export interface Ini {
   expressions: Map<string, string>; // canais calculados de [OutputChannels] (ex.: "{ a ? b : c }")
   defines: Map<string, string[]>;
   tables: Map<string, TableDef>;
+  calibracoes: Record<string, Calibracao>;
   commands: Map<string, number[]>; // botões de ação do .ini (cmd_*), ex.: teste de bico
   comms: IniComms;
   family: 'rusefi' | 'speeduino' | 'outra';
@@ -197,7 +206,7 @@ function parseOptions(rest: string[], defines: Map<string, string[]>): string[] 
 
 /** Símbolos dos #if do .ini que o app liga. Na Speeduino: graus Celsius e lambda (o app trabalha
  *  em lambda e unidades métricas). O resto (placa Teensy/STM32, modo compatível...) fica desligado. */
-export const DEFAULT_SYMBOLS = ['CELSIUS', 'LAMBDA'];
+export const DEFAULT_SYMBOLS = ['CELSIUS', 'LAMBDA', 'enablehardware_test']; // enablehardware_test: Speeduino mostra o menu de teste de saídas
 
 export function parseIni(text: string, symbols: string[] = DEFAULT_SYMBOLS): Ini {
   const ini: Ini = {
@@ -212,6 +221,7 @@ export function parseIni(text: string, symbols: string[] = DEFAULT_SYMBOLS): Ini
     defines: new Map(),
     tables: new Map(),
     commands: new Map(),
+    calibracoes: {},
     comms: { queryCommand: 'S', envelope: false, ochGetCommand: 'O%2o%2c', delayAfterPortOpen: 0, interWriteDelay: 0, blockReadTimeout: 2000, bigEndian: false },
     family: 'outra',
   };
@@ -247,7 +257,7 @@ export function parseIni(text: string, symbols: string[] = DEFAULT_SYMBOLS): Ini
       else if (dir === '#else' && cond.length) { const c = cond[cond.length - 1]; c[0] = !c[1]; c[1] = true; }
       else if (dir === '#endif') cond.pop();
       else if (dir === '#set' && active() && rest[0]) sym.add(rest[0]);
-      else if (dir === '#unset' && active() && rest[0]) sym.delete(rest[0]);
+      else if (dir === '#unset' && active() && rest[0] && rest[0] !== 'enablehardware_test') sym.delete(rest[0]); // teste de saídas sempre aparece
       else if (dir === '#define' && active()) {
         const def = trimmed.slice('#define'.length).trim();
         const eq = def.indexOf('=');
@@ -374,7 +384,7 @@ export function parseIni(text: string, symbols: string[] = DEFAULT_SYMBOLS): Ini
       } else if (dialog && key === 'panel') {
         dialog.panels.push({ id: parts[0], cond: conds(parts.slice(1)) });
       } else if (dialog && key === 'commandButton') {
-        dialog.commands.push({ label: txt(parts[0]), cmd: (parts[1] ?? '').trim(), cond: conds(parts.slice(2)) });
+        dialog.commands.push({ label: txt(parts[0]), cmd: (parts[1] ?? '').trim(), cond: conds(parts.slice(2)), flag: parts.slice(2).map((x) => x.trim()).find((x) => /^clickOnClose/.test(x)) });
       }
       continue;
     }
@@ -411,12 +421,45 @@ export function parseIni(text: string, symbols: string[] = DEFAULT_SYMBOLS): Ini
   });
   ini.family = /^rusEFI/i.test(ini.signature) ? 'rusefi' : /^speeduino/i.test(ini.signature) ? 'speeduino' : 'outra';
   if (ini.family === 'speeduino' && ini.pages.length > 1) juntarPaginas(ini);
-  for (const m of text.matchAll(/^\s*(cmd_\w+)\s*=\s*"([^"]*)"/gm)) {
+  // Só a seção [ControllerCommands]: rusEFI usa cmd_xxx, Speeduino cmdxxx (o mesmo nome aparece na ajuda com outro texto)
+  const ini0 = text.search(/^\[ControllerCommands\]/m);
+  const resto = ini0 < 0 ? '' : text.slice(ini0 + 20);
+  const fim = resto.search(/^\[/m);
+  for (const m of (fim < 0 ? resto : resto.slice(0, fim)).matchAll(/^\s*(cmd\w+)\s*=\s*"([^"]*)"/gm)) {
     const bytes: number[] = [];
     m[2].replace(/\\x([0-9a-fA-F]{2})|(.)/g, (_, h, c) => { bytes.push(h ? parseInt(h, 16) : c.charCodeAt(0)); return ''; });
     ini.commands.set(m[1], bytes);
   }
+  ini.calibracoes = lerCalibracoes(text);
   return ini;
+}
+
+/** Blocos referenceTable do .ini (ferramentas de calibração do TunerStudio). */
+export function lerCalibracoes(text: string): Record<string, Calibracao> {
+  const out: Record<string, Calibracao> = {};
+  let c: Calibracao | undefined;
+  const n = (x?: string) => Number((x ?? '').trim());
+  for (const linha of text.split(/\r?\n/)) {
+    const l = linha.replace(/;.*$/, '').trim();
+    if (l.startsWith('[')) { c = undefined; continue; }
+    const m = l.match(/^(\w+)\s*=\s*(.*)$/);
+    if (!m) continue;
+    const ps = splitCsv(m[2]).map((x) => x.trim());
+    const tx = (x?: string) => (x ?? '').replace(/^"(.*)"$/, '$1');
+    if (m[1] === 'referenceTable') {
+      c = { id: ps[0], title: tx(ps[1]).replace(/\.+$/, ''), tabelas: [], adcCount: 0, bytesPerAdc: 1, scale: 1, termistores: [] };
+      out[c.id] = c;
+    } else if (!c) continue;
+    else if (m[1] === 'tableIdentifier') for (let i = 0; i + 1 < ps.length; i += 2) c.tabelas.push({ idx: n(ps[i]), nome: tx(ps[i + 1]) });
+    else if (m[1] === 'tableLimits') { const t = c.tabelas.find((x) => x.idx === n(ps[0])); if (t) Object.assign(t, { min: n(ps[1]), max: n(ps[2]), padrao: n(ps[3]) }); }
+    else if (m[1] === 'adcCount') c.adcCount = n(ps[0]);
+    else if (m[1] === 'bytesPerAdc') c.bytesPerAdc = n(ps[0]);
+    else if (m[1] === 'scale') c.scale = n(ps[0]);
+    else if (m[1] === 'thermOption' && ps.length >= 8) c.termistores.push({ nome: tx(ps[0]), bias: n(ps[1]), pontos: [[n(ps[2]), n(ps[3])], [n(ps[4]), n(ps[5])], [n(ps[6]), n(ps[7])]] });
+    else if (m[1] === 'tableGenerator' && ps[0] === 'linearGenerator' && ps.length >= 8) c.linear = { xUnit: tx(ps[2]), yUnit: tx(ps[3]), xLo: n(ps[4]), xHi: n(ps[5]), yLo: n(ps[6]), yHi: n(ps[7]) };
+  }
+  for (const k of Object.keys(out)) if (!out[k].tabelas.length || !out[k].adcCount) delete out[k];
+  return out;
 }
 
 /** Junta as páginas numa página 1 virtual (ver Ini.realPages). Os campos passam a apontar para

@@ -189,6 +189,12 @@ export class TsClient {
     await this.requestRaw(cmd, -1, waitMs);
   }
 
+  /** Tabela de calibração de sensor (Speeduino 't'): só com envelope, a ECU responde OK ou erro. */
+  async calibracao(cmd: number[]): Promise<void> {
+    if (!this.envelope) throw new Error('Esta versão da Speeduino é antiga (sem envelope): calibre os sensores pelo TunerStudio.');
+    TsClient.ok(await this.request(cmd));
+  }
+
   /** Assinatura do firmware. query = queryCommand do .ini ("S" na rusEFI, "Q" na Speeduino). */
   async signature(query = 'S'): Promise<string> {
     const cmd = [...query].map((c) => c.charCodeAt(0));

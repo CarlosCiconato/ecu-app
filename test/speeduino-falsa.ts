@@ -9,6 +9,8 @@ export class SpeeduinoFalsa {
   eeprom: Uint8Array[];
   saida: Uint8Array;
   log: string[] = [];
+  comandos: number[] = []; // 'E': botões (word p1,p2)
+  calibracoes: { tabela: number; off: number; dados: number[] }[] = []; // 't'
   private rx: number[] = [];
   private paraApp?: (d: Uint8Array) => void;
   private acordaEm = 0;
@@ -18,6 +20,8 @@ export class SpeeduinoFalsa {
     this.eeprom = this.paginas.map((p) => p.slice());
     this.saida = new Uint8Array(Math.max(ini.ochBlockSize, 1));
     this.saida.forEach((_, i) => (this.saida[i] = i & 0xff));
+    const st = ini.outputs.get('testactive');
+    if (st) this.saida[st.offset] = 0; // começa fora do modo de teste
     this.acordaEm = Date.now() + reiniciaMs; // o Arduino Mega reinicia quando a porta abre
   }
 
@@ -135,6 +139,20 @@ export class SpeeduinoFalsa {
       }
       case 'b': this.eeprom[p[2] - 1] = this.paginas[p[2] - 1].slice(); return st(0x04);
       case 'r': if (p[2] === 0x30) return st(0, [...this.saida.subarray(u16(3), u16(3) + u16(5))]); return st(0x83);
+      case 'E': {
+        const w = (p[1] << 8) | p[2];
+        this.comandos.push(w);
+        const ta0 = this.ini.outputs.get('testactive'); const ta = ta0?.kind === 'bits' ? ta0 : undefined;
+        if (ta && w === 0x0101) this.saida[ta.offset] |= 1 << ta.bitLo;
+        if (ta && w === 0x0100) this.saida[ta.offset] &= ~(1 << ta.bitLo);
+        return st(0);
+      }
+      case 't': {
+        const tabela = p[2], off = (p[3] << 8) | p[4], n = (p[5] << 8) | p[6];
+        if (tabela > 2 || (tabela < 2 && n !== 64)) return st(0x84);
+        this.calibracoes.push({ tabela, off, dados: [...p.subarray(7, 7 + n)] });
+        return st(0);
+      }
       default: return st(0x83);
     }
   }

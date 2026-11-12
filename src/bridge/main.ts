@@ -133,6 +133,8 @@ wss.on('connection', (ws) => {
         case 'funcoesIni': reply(ecu.funcoesIni()); break;
         case 'dialogoIni': reply(ecu.dialogoIni(String(msg.alvo))); break;
         case 'curvaIni': reply(ecu.curvaIni(String(msg.alvo))); break;
+        case 'calibracaoIni': reply(ecu.calibracaoIni(String(msg.alvo))); break;
+        case 'calibrar': reply(await ecu.calibrar(String(msg.alvo), Number(msg.tabela), (msg.p ?? {}) as Parameters<typeof ecu.calibrar>[2])); break;
         case 'condicoes': reply(ecu.condicoes((msg.exprs as string[]) ?? [])); break;
         case 'constants': reply(Object.fromEntries((msg.names as string[]).map((n) => [n, ecu.constant(n) ?? null]))); break;
         case 'setCells': reply(await ecu.setCells(String(msg.name), msg.cells as { index: number; value: number }[])); break;

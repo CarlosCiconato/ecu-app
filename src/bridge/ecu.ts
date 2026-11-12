@@ -5,6 +5,8 @@ import { EventEmitter } from 'node:events';
 import { TsClient, detectSignature, type Transport } from '../core/protocol.js';
 import { acharIni } from '../core/biblioteca.js';
 import { SPEEDUINO_CANAIS, SPEEDUINO_LISTAS, SPEEDUINO_PC, SPEEDUINO_TABELAS } from '../core/traducao.js';
+import { ptOpcao, ptRotulo } from '../core/rotulos-pt.js';
+import { bytesLinear, bytesTemperatura, comandosCalibracao, curvaLinear, curvaTermistor, SONDAS } from '../core/calibracao.js';
 import { TYPE_SIZE, parseIni, type ArrayField, type Ini } from '../core/ini.js';
 import { decodeArray, decodeBits, decodeField, decodeScalar, encodeArray, encodeBits, encodeScalar } from '../core/codec.js';
 import { DemoEngine, demoPage } from './demo.js';
@@ -15,8 +17,8 @@ import { FT_LINKS, ftMainLoad, ftName, intAxis, lookup, pickAxis, readFtTable, s
 
 /** Campos da tela pronta "std_injection" do TunerStudio (a Speeduino usa em Engine Constants). */
 const STD_INJECTION: [string, string][] = [
-  ['reqFuel', 'Required Fuel'], ['algorithm', 'Control Algorithm'], ['divider', 'Squirts Per Engine Cycle'], ['alternate', 'Injector Staging'],
-  ['twoStroke', 'Engine Stroke'], ['nCylinders', 'Number of Cylinders'], ['injType', 'Injector Port Type'], ['nInjectors', 'Number of Injectors'], ['engineType', 'Engine Type'],
+  ['reqFuel', 'Combustível requerido (Required Fuel)'], ['algorithm', 'Algoritmo de controle'], ['divider', 'Injeções por ciclo do motor'], ['alternate', 'Modo dos bicos'],
+  ['twoStroke', 'Ciclo do motor'], ['nCylinders', 'Número de cilindros'], ['injType', 'Tipo de injeção'], ['nInjectors', 'Número de bicos'], ['engineType', 'Tipo de motor'],
 ];
 
 const PW_CMDS: Record<string, number> = {
@@ -394,7 +396,7 @@ export class EcuSession extends EventEmitter {
 
   /** Todas as tabelas do .ini da ECU (tela genérica para ECUs que não são a nossa). */
   tabelasDoIni(): { name: string; title: string }[] {
-    return [...this.ini.tables.values()].filter((t) => [t.xBins, t.yBins, t.zBins].every((n) => this.ini.constants.get(n)?.kind === 'array')).map((t) => ({ name: t.name, title: t.title }));
+    return [...this.ini.tables.values()].filter((t) => [t.xBins, t.yBins, t.zBins].every((n) => this.ini.constants.get(n)?.kind === 'array')).map((t) => ({ name: t.name, title: this.pt(t.title) }));
   }
 
   // ---- Funções tiradas do próprio .ini (menus, diálogos e curvas que o TunerStudio mostra) ----
@@ -412,15 +414,61 @@ export class EcuSession extends EventEmitter {
   }
   condicoes(exprs: string[]): boolean[] { return exprs.map((e) => this.condOk(e)); }
 
+  /** Textos do .ini em português (Speeduino e outras; a rusEFI já tem as telas do app). */
+  private pt(s: string): string { return this.ini.family === 'rusefi' ? s : ptRotulo(s); }
+
+  /** Ferramentas de calibração do .ini (referenceTable): termistores e sonda. */
+  calibracoes() { return this.ini.calibracoes; }
+
+  /** Tela de calibração: tabelas (motor/ar ou sonda), sensores prontos do .ini e da biblioteca do app. */
+  calibracaoIni(id: string) {
+    const c = this.ini.calibracoes[id];
+    if (!c) throw new Error(`calibração ${id} não existe nesta ECU`);
+    const NOME: Record<string, string> = { 'Coolant Temperature Sensor': 'Sensor de temperatura do motor', 'Air Temperature Sensor': 'Sensor de temperatura do ar', 'AFR Table': 'Sonda (AFR)' };
+    return {
+      id, title: c.linear ? 'Calibrar sonda (AFR)' : 'Calibrar sensores de temperatura',
+      tipo: c.linear ? 'sonda' : 'temperatura', pontos: c.adcCount,
+      tabelas: c.tabelas.map((t) => ({ idx: t.idx, nome: NOME[t.nome] ?? t.nome })),
+      termistores: c.termistores, linear: c.linear, sondas: c.linear ? [['Do arquivo da ECU (' + c.linear.xLo + '-' + c.linear.xHi + ' V)', c.linear.xLo, c.linear.yLo, c.linear.xHi, c.linear.yHi], ...SONDAS] : [],
+    };
+  }
+
+  /** Gera a tabela e manda para a ECU (ela grava sozinha na EEPROM). Devolve a curva para mostrar. */
+  async calibrar(id: string, idx: number, p: { bias?: number; pontos?: [number, number][]; v1?: number; a1?: number; v2?: number; a2?: number }) {
+    const c = this.ini.calibracoes[id];
+    if (!c || !c.tabelas.some((t) => t.idx === idx)) throw new Error('calibração não existe nesta ECU');
+    if (this.ini.family !== 'speeduino') throw new Error('calibração de sensores só na Speeduino');
+    let dados: number[], curva: number[];
+    if (c.linear) {
+      const { v1, a1, v2, a2 } = p;
+      if ([v1, a1, v2, a2].some((x) => typeof x !== 'number' || !Number.isFinite(x)) || v1 === v2) throw new Error('confira as duas tensões e os dois AFR');
+      curva = curvaLinear(v1!, a1!, v2!, a2!, c.adcCount);
+      dados = bytesLinear(c, curva);
+    } else {
+      const pts = p.pontos;
+      if (!p.bias || p.bias <= 0 || !pts || pts.length !== 3 || pts.some(([t, r]) => !Number.isFinite(t) || !(r > 0))) throw new Error('confira o resistor bias e os 3 pontos (temperatura e resistência)');
+      if (new Set(pts.map(([t]) => t)).size < 3) throw new Error('as 3 temperaturas precisam ser diferentes');
+      curva = curvaTermistor(p.bias, pts, c.adcCount);
+      if (curva.some((x, i) => i > 0 && i < curva.length - 1 && !Number.isFinite(x))) throw new Error('esses 3 pontos não formam uma curva de termistor');
+      dados = bytesTemperatura(c, idx, curva);
+    }
+    if (this.demo) return { curva };
+    if (!this.client) throw new Error('sem conexão');
+    const pacote = c.linear ? 256 : dados.length; // temperatura: o firmware quer os 64 bytes juntos
+    for (const cmd of comandosCalibracao(idx, dados, pacote)) await this.client.calibracao(cmd);
+    return { curva };
+  }
+
   /** A que tela um alvo de menu/painel leva: tabela, curva ou diálogo (que pode ser só uma tabela/curva dentro). */
-  private alvoIni(id: string, prof = 0): { kind: 't' | 'c' | 'd'; id: string } | undefined {
+  private alvoIni(id: string, prof = 0): { kind: 't' | 'c' | 'd' | 'k'; id: string } | undefined {
+    if (this.calibracoes()[id]) return { kind: 'k', id };
     const tb = this.ini.tables.get(id);
     if (tb) return [tb.xBins, tb.yBins, tb.zBins].every((n) => this.ini.constants.get(n)?.kind === 'array') ? { kind: 't', id } : undefined;
     const c = this.ini.curves.get(id);
     if (c) return this.ini.constants.get(c.x)?.kind === 'array' && this.ini.constants.get(c.y)?.kind === 'array' ? { kind: 'c', id } : undefined;
     const d = this.ini.dialogs.get(id);
     if (!d || prof > 5) return undefined;
-    const temCampo = d.fields.some((f) => f.name && this.ini.constants.has(f.name));
+    const temCampo = d.fields.some((f) => f.name && this.ini.constants.has(f.name)) || d.commands.some((c) => this.ini.commands.has(c.cmd));
     const filhos = d.panels.map((p) => this.alvoIni(p.id, prof + 1)).filter((x): x is NonNullable<typeof x> => !!x);
     if (!temCampo && filhos.length === 1) return filhos[0];
     return temCampo || filhos.length ? { kind: 'd', id } : undefined;
@@ -433,17 +481,19 @@ export class EcuSession extends EventEmitter {
       if (/^(help|3d tuning maps|file|communications|data logging)$/i.test(m.title.trim())) continue;
       const items = [];
       for (const i of m.items) {
+        if (i.target === 'stm32cmd') continue; // só para placas STM32 (reiniciar no bootloader)
         const a = this.alvoIni(i.target);
-        if (a) items.push({ ...a, label: i.label, on: this.condOk(i.cond) });
+        if (a) items.push({ ...a, label: this.pt(i.label), on: this.condOk(i.cond) });
       }
-      if (items.length) out.push({ title: m.title, items });
+      if (items.length) out.push({ title: this.pt(m.title), items });
     }
     return out;
   }
 
   /** Um diálogo do .ini achatado: seções com campos + atalhos para as tabelas e curvas de dentro. */
   dialogoIni(id: string) {
-    const secoes: { title: string; fields: { name: string; label: string; unit?: string; digits?: number; step?: number; big?: number; cond?: string }[] }[] = [];
+    type Botao = { label: string; cmd: string; cond?: string; fecha?: string };
+    const secoes: { title: string; fields: { name: string; label: string; unit?: string; digits?: number; step?: number; big?: number; cond?: string }[]; botoes: Botao[]; avisos: string[] }[] = [];
     const links: { kind: string; id: string; label: string }[] = [];
     const vistos = new Set<string>();
     const anda = (did: string, cond: string | undefined, prof: number) => {
@@ -457,9 +507,12 @@ export class EcuSession extends EventEmitter {
         if (!f.name || !k || k.kind === 'array' || k.page !== 1) continue;
         const dg = k.kind === 'scalar' ? Math.min(3, Math.max(0, k.digits ?? 0)) : 0;
         const step = k.kind === 'scalar' && Math.abs(k.scale) > 10 ** -dg ? Math.abs(k.scale) : 10 ** -dg;
-        fields.push({ name: f.name, label: f.label || f.name, unit: k.kind === 'scalar' ? k.units : undefined, digits: dg, step, big: step * 10, cond: junta(f.cond) });
+        fields.push({ name: f.name, label: this.pt(f.label || f.name), unit: k.kind === 'scalar' ? k.units : undefined, digits: dg, step, big: step * 10, cond: junta(f.cond) });
       }
-      if (fields.length) secoes.push({ title: d.title || (secoes.length ? '' : ''), fields });
+      // textos soltos (field = "!Aviso...") e botões de comando (teste de saídas etc.)
+      const avisos = d.fields.filter((f) => !f.name && /[A-Za-z]/.test(f.label)).map((f) => this.pt(f.label));
+      const botoes: Botao[] = d.commands.filter((c) => this.ini.commands.has(c.cmd)).map((c) => ({ label: c.label === 'Off' && this.ini.family !== 'rusefi' ? 'Desligar' : this.pt(c.label), cmd: c.cmd, cond: junta(c.cond), fecha: c.flag }));
+      if (fields.length || botoes.length || (avisos.length && !fields.length)) secoes.push({ title: this.pt(d.title), fields, botoes, avisos });
       for (const p of d.panels) {
         // std_injection = tela pronta do TunerStudio (combustível requerido e dados do motor)
         if (p.id === 'std_injection' || p.id === 'std_constants') {
@@ -468,16 +521,16 @@ export class EcuSession extends EventEmitter {
             const dg = k.kind === 'scalar' ? Math.min(3, Math.max(0, k.digits ?? 0)) : 0;
             return { name, label, unit: k.kind === 'scalar' ? k.units : undefined, digits: dg, step: 10 ** -dg, big: 10 ** -dg * 10, cond: junta(p.cond) };
           });
-          if (f2.length) secoes.push({ title: 'Engine / Required Fuel', fields: f2 });
+          if (f2.length) secoes.push({ title: this.pt('Engine Constants'), fields: f2, botoes: [], avisos: [] });
           continue;
         }
         if (this.ini.dialogs.has(p.id)) { anda(p.id, junta(p.cond), prof + 1); continue; }
         const a = this.alvoIni(p.id);
-        if (a && a.kind !== 'd' && !links.some((l) => l.id === a.id)) links.push({ ...a, label: (a.kind === 't' ? this.ini.tables.get(a.id)?.title : this.ini.curves.get(a.id)?.title) ?? a.id });
+        if (a && a.kind !== 'd' && !links.some((l) => l.id === a.id)) links.push({ ...a, label: this.pt((a.kind === 't' ? this.ini.tables.get(a.id)?.title : a.kind === 'c' ? this.ini.curves.get(a.id)?.title : this.calibracoes()[a.id]?.title) ?? a.id) });
       }
     };
     anda(id, undefined, 0);
-    return { title: this.ini.dialogs.get(id)?.title ?? id, secoes, links };
+    return { title: this.pt(this.ini.dialogs.get(id)?.title ?? id), secoes, links };
   }
 
   /** Uma curva do .ini pronta para o editor de curvas. */
@@ -487,8 +540,8 @@ export class EcuSession extends EventEmitter {
     if (!c || x?.kind !== 'array' || y?.kind !== 'array') throw new Error(`curva ${id} não existe nesta ECU`);
     const dg = Math.min(3, Math.max(0, y.digits ?? 0));
     const step = Math.max(10 ** -dg, Math.abs(y.scale) >= 1 ? Math.abs(y.scale) : 0);
-    return { title: c.title, x: c.x, y: c.y, xUnit: x.units || c.xLabel, yUnit: y.units || c.yLabel, live: c.xLive && (this.ini.outputs.has(c.xLive) || this.ini.expressions.has(c.xLive)) ? c.xLive : undefined,
-      step, big: step * 5, digits: dg, xDigits: Math.min(2, Math.max(0, x.digits ?? 0)), hint: `${c.xLabel} × ${c.yLabel}` };
+    return { title: this.pt(c.title), x: c.x, y: c.y, xUnit: x.units || this.pt(c.xLabel), yUnit: y.units || this.pt(c.yLabel), live: c.xLive && (this.ini.outputs.has(c.xLive) || this.ini.expressions.has(c.xLive)) ? c.xLive : undefined,
+      step, big: step * 5, digits: dg, xDigits: Math.min(2, Math.max(0, x.digits ?? 0)), hint: `${this.pt(c.xLabel)} × ${this.pt(c.yLabel)}` };
   }
 
   /** Avalia expressões simples do .ini (só nomes, números e operadores). */
@@ -560,7 +613,7 @@ export class EcuSession extends EventEmitter {
     const y = this.ini.constants.get(t.yBins) as ArrayField;
     return {
       name: tableName,
-      title: t.title,
+      title: this.pt(t.title),
       units: z.units,
       digits: z.digits ?? 2,
       min: z.min, max: z.max,
@@ -903,7 +956,8 @@ export class EcuSession extends EventEmitter {
   /** Lista de opções de um campo de bits, para mostrar o nome na tela. */
   options(name: string): string[] {
     const f = this.ini.constants.get(name);
-    return f?.kind === 'bits' ? f.options : [];
+    if (f?.kind !== 'bits') return [];
+    return this.ini.family === 'rusefi' ? f.options : f.options.map(ptOpcao);
   }
 
   async burn() {

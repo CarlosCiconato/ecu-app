@@ -74,6 +74,7 @@ describe('sessão com Speeduino', () => {
       if (visto.has(i.kind + i.id)) return;
       visto.add(i.kind + i.id);
       if (i.kind === 't') { expect(s.table(i.id).values.length).toBeGreaterThan(0); n.t++; }
+      else if (i.kind === 'k') { expect(s.calibracaoIni(i.id).tabelas.length).toBeGreaterThan(0); }
       else if (i.kind === 'c') { const c = s.curvaIni(i.id); expect(Array.isArray(s.constant(c.x)) && Array.isArray(s.constant(c.y))).toBe(true); n.c++; }
       else {
         const d = s.dialogoIni(i.id); n.d++;
@@ -88,6 +89,48 @@ describe('sessão com Speeduino', () => {
     // muda um ajuste e confere na ECU falsa
     await s.setValue('nCylinders', 6);
     expect(s.constant('nCylinders')).toBe(6);
+    s.disconnect();
+  }, 30000);
+
+  it('português, botões de teste de saídas e calibração de sensores (202501)', async () => {
+    const nosso = parseIni(readFileSync('ini/simulador.ini', 'latin1'));
+    const s = new EcuSession(nosso, { app: path.resolve('ini'), cache: path.join(os.tmpdir(), 'ecu-ini-teste') });
+    const ecu = new SpeeduinoFalsa(iniDe('speeduino 202501'));
+    await s.connectTransport('falsa', ecu.transporte());
+    // nomes em português
+    const menus = s.funcoesIni();
+    const todos = menus.flatMap((m) => m.items.map((i) => i.label));
+    expect(todos).toEqual(expect.arrayContaining(['Mapa de VE', 'Testar saídas', 'Calibrar sensores de temperatura']));
+    expect(s.dialogoIni('engine_constants').secoes.flatMap((x) => x.fields.map((f) => f.label))).toContain('Número de cilindros');
+    expect(s.options('injLayout')).toContain('Sequencial');
+    // teste de saídas: botões com condição, comando 'E' chega na ECU e liga o modo de teste
+    const d = s.dialogoIni('outputtest1');
+    const botoes = d.secoes.flatMap((x) => x.botoes);
+    const liga = botoes.find((b) => b.cmd === 'cmdEnableTestMode')!;
+    const bico1 = botoes.find((b) => b.cmd === 'cmdtestinj1Pulsed')!;
+    expect(botoes.find((b) => b.cmd === 'cmdStopTestMode')?.fecha).toBe('clickOnCloseIfEnabled');
+    expect(d.secoes.flatMap((x) => x.avisos).join(' ')).toContain('ATENÇÃO');
+    expect(s.condicoes([liga.cond!, bico1.cond!])).toEqual([true, false]);
+    await s.command('cmdEnableTestMode');
+    expect(ecu.comandos).toContain(0x0101);
+    await new Promise((r) => setTimeout(r, 400)); // ao vivo atualiza testactive
+    expect(s.condicoes([liga.cond!, bico1.cond!])).toEqual([false, true]);
+    await s.command('cmdtestinj1Pulsed');
+    expect(ecu.comandos).toContain(0x0203);
+    // calibração: temperatura do motor (sensor GM) e sonda linear
+    const cal = s.calibracaoIni('std_ms2gentherm');
+    const gm = cal.termistores.find((t) => t.nome === 'GM')!;
+    const r = await s.calibrar('std_ms2gentherm', 0, { bias: gm.bias, pontos: gm.pontos });
+    expect(ecu.calibracoes[0].tabela).toBe(0);
+    expect(ecu.calibracoes[0].dados.length).toBe(64);
+    // ponto 15 (ADC 495): ~30 °C = 86 °F -> 860, byte baixo primeiro
+    const v15 = ecu.calibracoes[0].dados[30] | (ecu.calibracoes[0].dados[31] << 8);
+    expect(Math.abs(v15 / 10 - (r.curva[15] * 1.8 + 32))).toBeLessThan(0.1);
+    expect(r.curva[15]).toBeGreaterThan(25); expect(r.curva[15]).toBeLessThan(35);
+    await s.calibrar('std_ms2geno2', 2, { v1: 0, a1: 10, v2: 5, a2: 20 });
+    const o2 = ecu.calibracoes.filter((c) => c.tabela === 2);
+    expect(o2.map((c) => c.off)).toEqual([0, 256, 512, 768]);
+    expect(o2[0].dados[0]).toBe(100); expect(o2[3].dados[255]).toBe(200);
     s.disconnect();
   }, 30000);
 

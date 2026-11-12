@@ -1,6 +1,6 @@
 // Lista de todas as tabelas do .ini da ECU conectada (Speeduino e outras que não são a nossa).
 // Cada uma abre no mesmo editor de mapa do app.
-import { useEffect, useState, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { call, useStatus } from '../api';
 import type { Screen } from '../App';
 import type { MapaConfig } from './MapaInjecao';
@@ -21,7 +21,7 @@ export function cfgGenerica(nome: string, digits = 0, unit = ''): MapaConfig & {
 type ItemIni = { kind: string; id: string; label: string; on: boolean };
 /** Nome de cada tela aberta a partir do .ini (para o título da aba). */
 export const ROTULOS_INI: Record<string, string> = {};
-export const telaIni = (i: { kind: string; id: string }) => (i.kind === 't' ? `t_ini_${i.id}` : i.kind === 'c' ? `c_ini_${i.id}` : `d_ini_${i.id}`) as Screen;
+export const telaIni = (i: { kind: string; id: string }) => `${['t', 'c', 'k'].includes(i.kind) ? i.kind : 'd'}_ini_${i.id}` as Screen;
 
 /** Todas as funções que o .ini da ECU traz (os mesmos menus do TunerStudio): ajustes, curvas e tabelas. */
 export function TabelasEcu({ go }: { go: (s: Screen) => void }) {
@@ -39,7 +39,7 @@ export function TabelasEcu({ go }: { go: (s: Screen) => void }) {
     return () => clearInterval(t);
   }, [s.state, s.iniSignature]);
   const q = busca.trim().toLowerCase();
-  const TIPO: Record<string, string> = { t: 'Tabela', c: 'Curva', d: 'Ajustes' };
+  const TIPO: Record<string, string> = { t: 'Tabela', c: 'Curva', d: 'Ajustes', k: 'Calibração' };
   const MENU_PT: Record<string, string> = { Settings: 'Configurações (Settings)', Tuning: 'Acerto (Tuning)', Spark: 'Ignição (Spark)', 'Startup/Idle': 'Partida e marcha lenta (Startup/Idle)', Accessories: 'Acessórios (Accessories)', Tools: 'Ferramentas (Tools)' };
   return (
     <main className="screen" style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 10 }}>
@@ -70,40 +70,82 @@ export function TabelasEcu({ go }: { go: (s: Screen) => void }) {
   );
 }
 
-type DialogoIni = { title: string; secoes: { title: string; fields: (CampoDef & { cond?: string })[] }[]; links: { kind: string; id: string; label: string }[] };
+type Botao = { label: string; cmd: string; cond?: string; fecha?: string };
+type DialogoIni = { title: string; secoes: { title: string; fields: (CampoDef & { cond?: string })[]; botoes: Botao[]; avisos: string[] }[]; links: { kind: string; id: string; label: string }[] };
 /** Um diálogo do .ini no Formulario do app. Os campos aparecem e somem pelas condições do .ini. */
 export function DialogoIniTela({ id, go }: { id: string; go: (s: Screen) => void }) {
   const [d, setD] = useState<DialogoIni>();
   const [vis, setVis] = useState<Record<string, boolean>>({});
   const [erro, setErro] = useState<string>();
+  const [ocupado, setOcupado] = useState(false);
+  const [aviso, setAviso] = useState<string>();
+  const visRef = useRef(vis);
+  visRef.current = vis;
+  const lerRef = useRef<(() => void) | undefined>(undefined);
   useEffect(() => { call<DialogoIni>('dialogoIni', { alvo: id }).then(setD, (e) => setErro((e as Error).message)); }, [id]);
   useEffect(() => {
     if (!d) return;
-    const exprs = [...new Set(d.secoes.flatMap((x) => x.fields.map((f) => f.cond).filter((c): c is string => !!c)))];
+    const exprs = [...new Set(d.secoes.flatMap((x) => [...x.fields, ...x.botoes].map((f) => f.cond).filter((c): c is string => !!c)))];
     if (!exprs.length) return;
+    const temBotao = d.secoes.some((x) => x.botoes.length);
     const ler = () => call<boolean[]>('condicoes', { exprs }).then((r) => setVis((old) => {
       const novo = Object.fromEntries(exprs.map((e, k) => [e, r[k]]));
       return exprs.every((e) => old[e] === novo[e]) ? old : novo;
     }), () => undefined);
+    lerRef.current = () => void ler();
     void ler();
-    const t = setInterval(() => void ler(), 1200);
+    const t = setInterval(() => void ler(), temBotao ? 500 : 1200);
     return () => clearInterval(t);
   }, [d]);
+  // Botões com clickOnCloseIfEnabled (ex.: "Parar modo de teste") rodam ao sair da tela, se estiverem habilitados
+  useEffect(() => () => {
+    for (const sec of d?.secoes ?? []) for (const b of sec.botoes) {
+      const ok = !b.cond || visRef.current[b.cond] !== false;
+      if (b.fecha === 'clickOnClose' || (b.fecha === 'clickOnCloseIfEnabled' && ok) || (b.fecha === 'clickOnCloseIfDisabled' && !ok)) void call('cmd', { name: b.cmd }).catch(() => undefined);
+    }
+  }, [d]);
+  const aperta = async (b: Botao) => {
+    setOcupado(true); setAviso(undefined);
+    try { await call('cmd', { name: b.cmd }); } catch (e) { setAviso((e as Error).message); }
+    setOcupado(false);
+    setTimeout(() => lerRef.current?.(), 250);
+  };
   if (erro) return <main className="screen"><div className="notice err">{erro}</div></main>;
   if (!d) return <main className="screen"><span className="label">Lendo…</span></main>;
   const usados = new Set<string>();
-  const sections: SecaoDef[] = d.secoes.map((sec, k) => {
+  const sections: SecaoDef[] = d.secoes.filter((sec) => sec.fields.length).map((sec, k) => {
     let title = sec.title || d.title || `Ajustes ${k + 1}`;
     while (usados.has(title)) title += ' ';
     usados.add(title);
     return { title, fields: sec.fields.map((f) => ({ ...f, showIf: f.cond ? () => vis[f.cond!] !== false : undefined })) };
   });
-  const extra = d.links.length ? (
+  const comBotoes = d.secoes.filter((sec) => sec.botoes.length || (sec.avisos.length && !sec.fields.length));
+  const botoes = comBotoes.length ? (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-      {d.links.map((l) => { ROTULOS_INI[telaIni(l)] = l.label; return <button key={l.kind + l.id} className="btn" style={{ height: 40, fontSize: 14 }} onClick={() => go(telaIni(l))}>{l.kind === 't' ? 'Tabela' : 'Curva'}: {l.label} ›</button>; })}
+      {comBotoes.map((sec, k) => (
+        <section key={k} className="card" style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6, flex: sec.botoes.length ? '1 1 200px' : '1 1 100%' }}>
+          {sec.title && <span className="label">{sec.title}</span>}
+          {sec.avisos.map((a, i) => <span key={i} style={{ fontSize: 13, color: /ATENÇÃO|Atenção|!/.test(a) ? 'var(--red)' : 'var(--muted)', fontWeight: 600 }}>{a}</span>)}
+          {sec.botoes.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {sec.botoes.map((b) => {
+                const ok = !b.cond || vis[b.cond] !== false;
+                return <button key={b.cmd} className="btn" style={{ height: 40, fontSize: 14, opacity: ok ? 1 : 0.4 }} disabled={!ok || ocupado} onClick={() => void aperta(b)}>{b.label}</button>;
+              })}
+            </div>
+          )}
+        </section>
+      ))}
+      {aviso && <div className="notice err" style={{ flex: '1 1 100%' }}>{aviso}</div>}
     </div>
   ) : undefined;
-  if (!sections.length) return <main className="screen">{extra ?? <div className="notice">Esta função não tem ajustes que o app saiba mostrar.</div>}</main>;
+  const atalhos = d.links.length ? (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      {d.links.map((l) => { ROTULOS_INI[telaIni(l)] = l.label; return <button key={l.kind + l.id} className="btn" style={{ height: 40, fontSize: 14 }} onClick={() => go(telaIni(l))}>{l.kind === 't' ? 'Tabela' : l.kind === 'k' ? 'Calibração' : 'Curva'}: {l.label} ›</button>; })}
+    </div>
+  ) : undefined;
+  const extra = botoes || atalhos ? <>{botoes}{atalhos}</> : undefined;
+  if (!sections.length) return <main className="screen" style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 10 }}>{extra ?? <div className="notice">Esta função não tem ajustes que o app saiba mostrar.</div>}</main>;
   return <Formulario key={id} sections={sections} extra={extra} />;
 }
 
