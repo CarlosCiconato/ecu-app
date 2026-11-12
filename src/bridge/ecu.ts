@@ -234,8 +234,12 @@ export class EcuSession extends EventEmitter {
         reg.add('tentativa', String(i + 1));
         det = await detectSignature(this.transport, serial ? 1500 : 1000);
         if (det) break;
-        this.setStatus({ message: `${label}: esperando a ECU responder… (${i + 1}/${tentativas})` });
-        await new Promise((r) => setTimeout(r, serial ? 1000 : 400));
+        // O bootloader do Arduino Mega fica preso enquanto recebe bytes (só sai depois de ~5,5 s de silêncio).
+        // Se falamos cedo demais, ele nunca chega no firmware: nas tentativas ímpares fica 7 s calado.
+        const silencio = !serial ? 400 : i % 2 === 0 ? 7000 : 1000;
+        this.setStatus({ message: `${label}: esperando a ECU responder… (${i + 1}/${tentativas})${silencio > 1000 ? ' Aguarde uns 10 s.' : ''}` });
+        reg.add('silencio', `${silencio} ms`);
+        await new Promise((r) => setTimeout(r, silencio));
       }
       if (!det!) throw new Error(`A ECU não respondeu. Confira o cabo, a porta escolhida, se a ECU está ligada e se o TunerStudio está fechado.${arqReg ? ` Registro da conversa: ${arqReg}` : ''}`);
       reg.add('assinatura', `${det.signature} · envelope ${det.envelope}`);

@@ -53,6 +53,17 @@ describe('sessão com Speeduino', () => {
     s.disconnect();
   }, 20000);
 
+  it('Arduino Mega de verdade: bootloader que prende se receber bytes cedo', async () => {
+    const nosso = parseIni(readFileSync('ini/simulador.ini', 'latin1'));
+    const s = new EcuSession(nosso, { app: path.resolve('ini'), cache: path.join(os.tmpdir(), 'ecu-ini-teste') });
+    // janela de 3 s (pior que a real): o app fala aos 2,5 s e prende o bootloader; tem de se recuperar sozinho
+    const ecu = new SpeeduinoFalsa(iniDe('speeduino 202402'), 'Speeduino 2024.02.3').bootloaderReal(3000);
+    await s.connectTransport('falsa', ecu.transporte(), true);
+    expect(s.status.message ?? '').not.toMatch(/não respondeu/);
+    expect(s.status.state).toBe('conectado');
+    s.disconnect();
+  }, 60000);
+
   it('sem .ini na biblioteca pede o arquivo', async () => {
     const nosso = parseIni(readFileSync('ini/simulador.ini', 'latin1'));
     const s = new EcuSession(nosso, { app: path.resolve('ini'), cache: path.join(os.tmpdir(), 'ecu-ini-vazio') });

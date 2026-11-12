@@ -46,7 +46,20 @@ export class SpeeduinoFalsa {
     setTimeout(() => this.paraApp?.(u), 1);
   }
 
+  /** Bootloader do Arduino Mega de verdade (stk500v2): espera ~1 s; se chegar QUALQUER byte nesse tempo,
+   *  fica preso esperando gravação e só sai depois de ~5,5 s sem receber nada. */
+  bootloaderReal(janelaMs = 1000, presoMs = 5500) {
+    this.boot = { fim: Date.now() + janelaMs, presoMs, preso: false };
+    return this;
+  }
+  private boot?: { fim: number; presoMs: number; preso: boolean };
+
   private recebe(d: Uint8Array) {
+    if (this.boot) {
+      const agora = Date.now();
+      if (agora < this.boot.fim) { this.boot.preso = true; this.boot.fim = agora + this.boot.presoMs; return; }
+      this.boot = undefined; // o firmware já subiu
+    }
     if (Date.now() < this.acordaEm) return; // ainda no bootloader: perde os bytes
     this.rx.push(...d);
     if (this.ini.comms.envelope) this.envelope();
