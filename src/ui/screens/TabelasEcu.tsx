@@ -4,6 +4,8 @@ import { useEffect, useState, type ReactElement } from 'react';
 import { call, useStatus } from '../api';
 import type { Screen } from '../App';
 import type { MapaConfig } from './MapaInjecao';
+import { Formulario, type CampoDef, type SecaoDef } from './Formulario';
+import { CURVAS, Curva, type CurvaDef } from './Curva';
 
 /** Editor genérico: passos tirados das casas decimais da tabela. */
 export function cfgGenerica(nome: string, digits = 0, unit = ''): MapaConfig & { title: string } {
@@ -16,25 +18,102 @@ export function cfgGenerica(nome: string, digits = 0, unit = ''): MapaConfig & {
   };
 }
 
+type ItemIni = { kind: string; id: string; label: string; on: boolean };
+/** Nome de cada tela aberta a partir do .ini (para o título da aba). */
+export const ROTULOS_INI: Record<string, string> = {};
+export const telaIni = (i: { kind: string; id: string }) => (i.kind === 't' ? `t_ini_${i.id}` : i.kind === 'c' ? `c_ini_${i.id}` : `d_ini_${i.id}`) as Screen;
+
+/** Todas as funções que o .ini da ECU traz (os mesmos menus do TunerStudio): ajustes, curvas e tabelas. */
 export function TabelasEcu({ go }: { go: (s: Screen) => void }) {
   const s = useStatus();
-  const [lista, setLista] = useState<{ name: string; title: string }[]>([]);
-  useEffect(() => { if (s.state === 'conectado') call<{ name: string; title: string }[]>('tabelasIni').then(setLista, () => setLista([])); }, [s.state, s.iniSignature]);
+  const [menus, setMenus] = useState<{ title: string; items: ItemIni[] }[]>([]);
+  const [busca, setBusca] = useState('');
+  useEffect(() => {
+    if (s.state !== 'conectado') return;
+    const ler = () => call<{ title: string; items: ItemIni[] }[]>('funcoesIni').then((m) => {
+      setMenus(m);
+      for (const g of m) for (const i of g.items) ROTULOS_INI[telaIni(i)] = i.label;
+    }, () => setMenus([]));
+    void ler();
+    const t = setInterval(() => void ler(), 3000); // itens ligam e desligam conforme a configuração
+    return () => clearInterval(t);
+  }, [s.state, s.iniSignature]);
+  const q = busca.trim().toLowerCase();
+  const TIPO: Record<string, string> = { t: 'Tabela', c: 'Curva', d: 'Ajustes' };
+  const MENU_PT: Record<string, string> = { Settings: 'Configurações (Settings)', Tuning: 'Acerto (Tuning)', Spark: 'Ignição (Spark)', 'Startup/Idle': 'Partida e marcha lenta (Startup/Idle)', Accessories: 'Acessórios (Accessories)', Tools: 'Ferramentas (Tools)' };
   return (
-    <main className="screen" style={{ overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gridAutoRows: '80px', gap: 12, alignContent: 'start', paddingTop: 10 }}>
-      {lista.length === 0 && <div className="notice">Conecte uma ECU para ver as tabelas dela.</div>}
-      {lista.map((t) => (
-        <button key={t.name} className="card" onClick={() => go(`t_ini_${t.name}` as Screen)}
-          style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: 'pointer' }}>
-          <span style={{ display: 'flex', flexDirection: 'column', gap: 4, flexGrow: 1 }}>
-            <span className="num" style={{ fontSize: 20 }}>{t.title}</span>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{t.name}</span>
-          </span>
-          <span style={{ fontSize: 26, color: 'var(--muted)' }}>›</span>
-        </button>
-      ))}
+    <main className="screen" style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 10 }}>
+      {menus.length === 0 && <div className="notice">Conecte uma ECU para ver as funções dela.</div>}
+      {menus.length > 0 && <input className="field" placeholder="Procurar função (ex.: idle, boost, launch)" value={busca} onChange={(e) => setBusca(e.target.value)} />}
+      {menus.map((m) => {
+        const itens = m.items.filter((i) => !q || i.label.toLowerCase().includes(q) || m.title.toLowerCase().includes(q));
+        if (!itens.length) return null;
+        return (
+          <section key={m.title} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span className="num" style={{ fontSize: 22, color: 'var(--amber)' }}>{MENU_PT[m.title.trim()] ?? m.title}</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gridAutoRows: '64px', gap: 10 }}>
+              {itens.map((i) => (
+                <button key={i.kind + i.id} className="card" onClick={() => go(telaIni(i))} title={i.on ? '' : 'Desligada pela configuração atual (dá para abrir e ver)'}
+                  style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', cursor: 'pointer', opacity: i.on ? 1 : 0.5 }}>
+                  <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flexGrow: 1, minWidth: 0 }}>
+                    <span className="num" style={{ fontSize: 17, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.label}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{TIPO[i.kind]}{i.on ? '' : ' · desligada'}</span>
+                  </span>
+                  <span style={{ fontSize: 22, color: 'var(--muted)' }}>›</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        );
+      })}
     </main>
   );
+}
+
+type DialogoIni = { title: string; secoes: { title: string; fields: (CampoDef & { cond?: string })[] }[]; links: { kind: string; id: string; label: string }[] };
+/** Um diálogo do .ini no Formulario do app. Os campos aparecem e somem pelas condições do .ini. */
+export function DialogoIniTela({ id, go }: { id: string; go: (s: Screen) => void }) {
+  const [d, setD] = useState<DialogoIni>();
+  const [vis, setVis] = useState<Record<string, boolean>>({});
+  const [erro, setErro] = useState<string>();
+  useEffect(() => { call<DialogoIni>('dialogoIni', { alvo: id }).then(setD, (e) => setErro((e as Error).message)); }, [id]);
+  useEffect(() => {
+    if (!d) return;
+    const exprs = [...new Set(d.secoes.flatMap((x) => x.fields.map((f) => f.cond).filter((c): c is string => !!c)))];
+    if (!exprs.length) return;
+    const ler = () => call<boolean[]>('condicoes', { exprs }).then((r) => setVis((old) => {
+      const novo = Object.fromEntries(exprs.map((e, k) => [e, r[k]]));
+      return exprs.every((e) => old[e] === novo[e]) ? old : novo;
+    }), () => undefined);
+    void ler();
+    const t = setInterval(() => void ler(), 1200);
+    return () => clearInterval(t);
+  }, [d]);
+  if (erro) return <main className="screen"><div className="notice err">{erro}</div></main>;
+  if (!d) return <main className="screen"><span className="label">Lendo…</span></main>;
+  const usados = new Set<string>();
+  const sections: SecaoDef[] = d.secoes.map((sec, k) => {
+    let title = sec.title || d.title || `Ajustes ${k + 1}`;
+    while (usados.has(title)) title += ' ';
+    usados.add(title);
+    return { title, fields: sec.fields.map((f) => ({ ...f, showIf: f.cond ? () => vis[f.cond!] !== false : undefined })) };
+  });
+  const extra = d.links.length ? (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      {d.links.map((l) => { ROTULOS_INI[telaIni(l)] = l.label; return <button key={l.kind + l.id} className="btn" style={{ height: 40, fontSize: 14 }} onClick={() => go(telaIni(l))}>{l.kind === 't' ? 'Tabela' : 'Curva'}: {l.label} ›</button>; })}
+    </div>
+  ) : undefined;
+  if (!sections.length) return <main className="screen">{extra ?? <div className="notice">Esta função não tem ajustes que o app saiba mostrar.</div>}</main>;
+  return <Formulario key={id} sections={sections} extra={extra} />;
+}
+
+/** Uma curva do .ini no editor de curvas do app. */
+export function CurvaIniTela({ id }: { id: string }) {
+  const [ok, setOk] = useState(false);
+  const [erro, setErro] = useState<string>();
+  useEffect(() => { setOk(false); call<CurvaDef>('curvaIni', { alvo: id }).then((c) => { CURVAS[`ini_${id}`] = c; setOk(true); }, (e) => setErro((e as Error).message)); }, [id]);
+  if (erro) return <main className="screen"><div className="notice err">{erro}</div></main>;
+  return ok ? <Curva key={id} id={`ini_${id}`} /> : <main className="screen"><span className="label">Lendo…</span></main>;
 }
 
 /** Abre uma tabela do .ini pelo nome, com as unidades e casas que a própria ECU informa. */

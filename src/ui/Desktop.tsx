@@ -18,9 +18,9 @@ type Group = { id: Screen; name: string; icon: string };
 const GROUPS: Group[] = [
   { id: 'inicio', name: 'Tela inicial', icon: 'M3 11l9-7 9 7M5 10v10h5v-6h4v6h5V10' },
   { id: 'conexao', name: 'Conexão', icon: 'M7 7h10v6a5 5 0 0 1-10 0zM10 3v4M14 3v4M12 18v3' },
+  { id: TILE_TABELAS_ECU.go, name: TILE_TABELAS_ECU.name, icon: TILE_TABELAS_ECU.icon }, // só aparece com Speeduino ou outra ECU
   ...TILES.filter((t) => t.go).flatMap((t) => [{ id: t.go as Screen, name: t.name, icon: t.icon },
     ...(t.go === 'painel' ? [{ id: 'datalogger' as Screen, name: 'Datalogger', icon: 'M3 3v18h18M7 15l3-4 3 3 5-7' }] : [])]),
-  { id: TILE_TABELAS_ECU.go, name: TILE_TABELAS_ECU.name, icon: TILE_TABELAS_ECU.icon },
 ];
 
 const LIVE_KEYS = ['rpm', 'boost', 'lambda', 'inj', 'duty', 'adv', 'clt', 'iat', 'tps', 'batt', 'oil'];
@@ -99,6 +99,9 @@ export function Desktop() {
     setTabs((t) => (t.includes(sc) ? t : [...t, sc]));
     setActive(sc);
   };
+  // Speeduino ou outra ECU: ao conectar, abre direto a tela com todas as funções dela.
+  const outraEcu = s.state === 'conectado' && !s.demo && !s.offline && !!s.family && s.family !== 'rusefi';
+  useEffect(() => { if (outraEcu) { setGroup('tabelasEcu'); setStack([]); openTab('tabelasEcu'); } }, [outraEcu]); // eslint-disable-line react-hooks/exhaustive-deps
   const go = (sc: Screen) => {
     if (SUBMENUS[sc]) {
       if (GROUPS.some((g) => g.id === sc)) { setGroup(sc); setStack([]); } else setStack((st) => [...st, sc]);

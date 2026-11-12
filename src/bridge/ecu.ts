@@ -13,6 +13,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { FT_LINKS, ftMainLoad, ftName, intAxis, lookup, pickAxis, readFtTable, setFtName, writeFtTable, type FtLink, type FtTable } from '../core/ftm.js';
 
+/** Campos da tela pronta "std_injection" do TunerStudio (a Speeduino usa em Engine Constants). */
+const STD_INJECTION: [string, string][] = [
+  ['reqFuel', 'Required Fuel'], ['algorithm', 'Control Algorithm'], ['divider', 'Squirts Per Engine Cycle'], ['alternate', 'Injector Staging'],
+  ['twoStroke', 'Engine Stroke'], ['nCylinders', 'Number of Cylinders'], ['injType', 'Injector Port Type'], ['nInjectors', 'Number of Injectors'], ['engineType', 'Engine Type'],
+];
+
 const PW_CMDS: Record<string, number> = {
   unlockUser: 0x2e, unlockTuner: 0x2f, unlockMaintenance: 0x30, setUser: 0x31, setTuner: 0x32, setMaintenance: 0x33, lockAll: 0x34,
 };
@@ -388,7 +394,101 @@ export class EcuSession extends EventEmitter {
 
   /** Todas as tabelas do .ini da ECU (tela genérica para ECUs que não são a nossa). */
   tabelasDoIni(): { name: string; title: string }[] {
-    return [...this.ini.tables.values()].filter((t) => this.ini.constants.has(t.zBins)).map((t) => ({ name: t.name, title: t.title }));
+    return [...this.ini.tables.values()].filter((t) => [t.xBins, t.yBins, t.zBins].every((n) => this.ini.constants.get(n)?.kind === 'array')).map((t) => ({ name: t.name, title: t.title }));
+  }
+
+  // ---- Funções tiradas do próprio .ini (menus, diálogos e curvas que o TunerStudio mostra) ----
+  // Serve para qualquer ECU: a Speeduino e outras rusEFI ganham todas as telas de calibração delas.
+
+  private condOk(cond?: string): boolean {
+    if (!cond) return true;
+    // vetor[i] vira o valor da posição; $variáveis do TunerStudio valem 0
+    const limpo = cond.replace(/\$\w+/g, '0').replace(/([A-Za-z_]\w*)\s*\[\s*(\d+)\s*\]/g, (_, n: string, i: string) => {
+      const a = this.constant(n);
+      return String(Array.isArray(a) ? a[Number(i)] ?? 0 : 0);
+    });
+    const v = this.evaluate(limpo);
+    return v === undefined || Number.isNaN(v) ? true : !!v;
+  }
+  condicoes(exprs: string[]): boolean[] { return exprs.map((e) => this.condOk(e)); }
+
+  /** A que tela um alvo de menu/painel leva: tabela, curva ou diálogo (que pode ser só uma tabela/curva dentro). */
+  private alvoIni(id: string, prof = 0): { kind: 't' | 'c' | 'd'; id: string } | undefined {
+    const tb = this.ini.tables.get(id);
+    if (tb) return [tb.xBins, tb.yBins, tb.zBins].every((n) => this.ini.constants.get(n)?.kind === 'array') ? { kind: 't', id } : undefined;
+    const c = this.ini.curves.get(id);
+    if (c) return this.ini.constants.get(c.x)?.kind === 'array' && this.ini.constants.get(c.y)?.kind === 'array' ? { kind: 'c', id } : undefined;
+    const d = this.ini.dialogs.get(id);
+    if (!d || prof > 5) return undefined;
+    const temCampo = d.fields.some((f) => f.name && this.ini.constants.has(f.name));
+    const filhos = d.panels.map((p) => this.alvoIni(p.id, prof + 1)).filter((x): x is NonNullable<typeof x> => !!x);
+    if (!temCampo && filhos.length === 1) return filhos[0];
+    return temCampo || filhos.length ? { kind: 'd', id } : undefined;
+  }
+
+  /** Menus do .ini com o que dá para abrir no app. */
+  funcoesIni(): { title: string; items: { kind: string; id: string; label: string; on: boolean }[] }[] {
+    const out = [];
+    for (const m of this.ini.menus) {
+      if (/^(help|3d tuning maps|file|communications|data logging)$/i.test(m.title.trim())) continue;
+      const items = [];
+      for (const i of m.items) {
+        const a = this.alvoIni(i.target);
+        if (a) items.push({ ...a, label: i.label, on: this.condOk(i.cond) });
+      }
+      if (items.length) out.push({ title: m.title, items });
+    }
+    return out;
+  }
+
+  /** Um diálogo do .ini achatado: seções com campos + atalhos para as tabelas e curvas de dentro. */
+  dialogoIni(id: string) {
+    const secoes: { title: string; fields: { name: string; label: string; unit?: string; digits?: number; step?: number; big?: number; cond?: string }[] }[] = [];
+    const links: { kind: string; id: string; label: string }[] = [];
+    const vistos = new Set<string>();
+    const anda = (did: string, cond: string | undefined, prof: number) => {
+      const d = this.ini.dialogs.get(did);
+      if (!d || prof > 6 || vistos.has(did)) return;
+      vistos.add(did);
+      const junta = (c?: string) => (cond && c ? `(${cond}) && (${c})` : cond ?? c);
+      const fields = [];
+      for (const f of d.fields) {
+        const k = f.name ? this.ini.constants.get(f.name) : undefined;
+        if (!f.name || !k || k.kind === 'array' || k.page !== 1) continue;
+        const dg = k.kind === 'scalar' ? Math.min(3, Math.max(0, k.digits ?? 0)) : 0;
+        const step = k.kind === 'scalar' && Math.abs(k.scale) > 10 ** -dg ? Math.abs(k.scale) : 10 ** -dg;
+        fields.push({ name: f.name, label: f.label || f.name, unit: k.kind === 'scalar' ? k.units : undefined, digits: dg, step, big: step * 10, cond: junta(f.cond) });
+      }
+      if (fields.length) secoes.push({ title: d.title || (secoes.length ? '' : ''), fields });
+      for (const p of d.panels) {
+        // std_injection = tela pronta do TunerStudio (combustível requerido e dados do motor)
+        if (p.id === 'std_injection' || p.id === 'std_constants') {
+          const f2 = STD_INJECTION.filter(([n]) => { const k = this.ini.constants.get(n); return k && k.kind !== 'array' && k.page === 1; }).map(([name, label]) => {
+            const k = this.ini.constants.get(name)!;
+            const dg = k.kind === 'scalar' ? Math.min(3, Math.max(0, k.digits ?? 0)) : 0;
+            return { name, label, unit: k.kind === 'scalar' ? k.units : undefined, digits: dg, step: 10 ** -dg, big: 10 ** -dg * 10, cond: junta(p.cond) };
+          });
+          if (f2.length) secoes.push({ title: 'Engine / Required Fuel', fields: f2 });
+          continue;
+        }
+        if (this.ini.dialogs.has(p.id)) { anda(p.id, junta(p.cond), prof + 1); continue; }
+        const a = this.alvoIni(p.id);
+        if (a && a.kind !== 'd' && !links.some((l) => l.id === a.id)) links.push({ ...a, label: (a.kind === 't' ? this.ini.tables.get(a.id)?.title : this.ini.curves.get(a.id)?.title) ?? a.id });
+      }
+    };
+    anda(id, undefined, 0);
+    return { title: this.ini.dialogs.get(id)?.title ?? id, secoes, links };
+  }
+
+  /** Uma curva do .ini pronta para o editor de curvas. */
+  curvaIni(id: string) {
+    const c = this.ini.curves.get(id);
+    const x = c && this.ini.constants.get(c.x), y = c && this.ini.constants.get(c.y);
+    if (!c || x?.kind !== 'array' || y?.kind !== 'array') throw new Error(`curva ${id} não existe nesta ECU`);
+    const dg = Math.min(3, Math.max(0, y.digits ?? 0));
+    const step = Math.max(10 ** -dg, Math.abs(y.scale) >= 1 ? Math.abs(y.scale) : 0);
+    return { title: c.title, x: c.x, y: c.y, xUnit: x.units || c.xLabel, yUnit: y.units || c.yLabel, live: c.xLive && (this.ini.outputs.has(c.xLive) || this.ini.expressions.has(c.xLive)) ? c.xLive : undefined,
+      step, big: step * 5, digits: dg, xDigits: Math.min(2, Math.max(0, x.digits ?? 0)), hint: `${c.xLabel} × ${c.yLabel}` };
   }
 
   /** Avalia expressões simples do .ini (só nomes, números e operadores). */

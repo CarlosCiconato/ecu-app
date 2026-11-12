@@ -130,6 +130,10 @@ wss.on('connection', (ws) => {
         case 'table': reply(ecu.table(String(msg.name))); break;
         case 'existe': reply(ecu.existe((msg.names as string[]) ?? [])); break;
         case 'tabelasIni': reply(ecu.tabelasDoIni()); break;
+        case 'funcoesIni': reply(ecu.funcoesIni()); break;
+        case 'dialogoIni': reply(ecu.dialogoIni(String(msg.alvo))); break;
+        case 'curvaIni': reply(ecu.curvaIni(String(msg.alvo))); break;
+        case 'condicoes': reply(ecu.condicoes((msg.exprs as string[]) ?? [])); break;
         case 'constants': reply(Object.fromEntries((msg.names as string[]).map((n) => [n, ecu.constant(n) ?? null]))); break;
         case 'setCells': reply(await ecu.setCells(String(msg.name), msg.cells as { index: number; value: number }[])); break;
         case 'setBits': await ecu.setBits(String(msg.name), Number(msg.value)); reply(true); break;

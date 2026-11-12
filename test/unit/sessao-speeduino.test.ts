@@ -64,6 +64,33 @@ describe('sessão com Speeduino', () => {
     s.disconnect();
   }, 60000);
 
+  it.each(['speeduino 201909', 'speeduino 202207', 'speeduino 202501'])('abre todas as funções do .ini (%s)', async (sig) => {
+    const nosso = parseIni(readFileSync('ini/simulador.ini', 'latin1'));
+    const s = new EcuSession(nosso, { app: path.resolve('ini'), cache: path.join(os.tmpdir(), 'ecu-ini-teste') });
+    await s.connectTransport('falsa', new SpeeduinoFalsa(iniDe(sig)).transporte());
+    const n = { d: 0, c: 0, t: 0, campos: 0 };
+    const visto = new Set<string>();
+    const abre = (i: { kind: string; id: string }) => {
+      if (visto.has(i.kind + i.id)) return;
+      visto.add(i.kind + i.id);
+      if (i.kind === 't') { expect(s.table(i.id).values.length).toBeGreaterThan(0); n.t++; }
+      else if (i.kind === 'c') { const c = s.curvaIni(i.id); expect(Array.isArray(s.constant(c.x)) && Array.isArray(s.constant(c.y))).toBe(true); n.c++; }
+      else {
+        const d = s.dialogoIni(i.id); n.d++;
+        for (const sec of d.secoes) for (const f of sec.fields) { n.campos++; expect(typeof s.constant(f.name)).toBe('number'); if (f.cond) expect(typeof s.condicoes([f.cond])[0]).toBe('boolean'); }
+        d.links.forEach(abre);
+      }
+    };
+    s.funcoesIni().forEach((m) => m.items.forEach(abre));
+    expect(n.d).toBeGreaterThan(25); expect(n.c).toBeGreaterThan(15); expect(n.t).toBeGreaterThan(8); expect(n.campos).toBeGreaterThan(300);
+    // Engine Constants traz os campos da tela pronta do TunerStudio (combustível requerido, cilindros)
+    expect(s.dialogoIni('engine_constants').secoes.flatMap((x) => x.fields.map((f) => f.name))).toEqual(expect.arrayContaining(['reqFuel', 'nCylinders']));
+    // muda um ajuste e confere na ECU falsa
+    await s.setValue('nCylinders', 6);
+    expect(s.constant('nCylinders')).toBe(6);
+    s.disconnect();
+  }, 30000);
+
   it('sem .ini na biblioteca pede o arquivo', async () => {
     const nosso = parseIni(readFileSync('ini/simulador.ini', 'latin1'));
     const s = new EcuSession(nosso, { app: path.resolve('ini'), cache: path.join(os.tmpdir(), 'ecu-ini-vazio') });

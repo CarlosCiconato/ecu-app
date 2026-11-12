@@ -71,7 +71,22 @@ export interface TableDef {
   zBins: string;
 }
 
+/** Item de menu do .ini (telas que o TunerStudio mostra): aponta para um diálogo, tabela ou curva. */
+export interface MenuItem { target: string; label: string; cond?: string }
+export interface MenuDef { title: string; items: MenuItem[] }
+/** Diálogo do .ini: campos (com a condição de habilitar) e painéis (outros diálogos, tabelas, curvas). */
+export interface DialogDef {
+  id: string; title: string;
+  fields: { label: string; name?: string; cond?: string }[];
+  panels: { id: string; cond?: string }[];
+  commands: { label: string; cmd: string; cond?: string }[];
+}
+export interface CurveDef { id: string; title: string; xLabel: string; yLabel: string; x: string; xLive?: string; y: string }
+
 export interface Ini {
+  menus: MenuDef[];
+  dialogs: Map<string, DialogDef>;
+  curves: Map<string, CurveDef>;
   signature: string;
   pages: IniPage[];
   blockingFactor: number;
@@ -186,6 +201,7 @@ export const DEFAULT_SYMBOLS = ['CELSIUS', 'LAMBDA'];
 
 export function parseIni(text: string, symbols: string[] = DEFAULT_SYMBOLS): Ini {
   const ini: Ini = {
+    menus: [], dialogs: new Map(), curves: new Map(),
     signature: '',
     pages: [],
     blockingFactor: 256,
@@ -210,6 +226,12 @@ export function parseIni(text: string, symbols: string[] = DEFAULT_SYMBOLS): Ini
   let pageIds: number[][] = [];
   let pageSizes: number[] = [];
   let table: TableDef | undefined;
+  let dialog: DialogDef | undefined;
+  let curve: CurveDef | undefined;
+  const expr = (p: string | undefined) => { const m = p?.trim().match(/^\{(.*)\}$/s); return m ? m[1].trim() : undefined; };
+  // "campo, {habilita}, {mostra}": junta as condições que vierem (as vazias {} não contam)
+  const conds = (ps: string[]) => { const l = ps.map(expr).filter((e): e is string => !!e); return l.length > 1 ? l.map((e) => `(${e})`).join(' && ') : l[0]; };
+  const txt = (p: string | undefined) => (p ?? '').trim().replace(/^"(.*)"$/, '$1');
   // Pilha de #if/#elif/#else: vale o ramo cujo símbolo está ligado (DEFAULT_SYMBOLS ou #set).
   // Cada nível guarda [ramo atual ativo, algum ramo já foi usado].
   const cond: [boolean, boolean][] = [];
@@ -329,6 +351,42 @@ export function parseIni(text: string, symbols: string[] = DEFAULT_SYMBOLS): Ini
           options: parseOptions(parts.slice(4), ini.defines),
         });
       }
+      continue;
+    }
+
+    if (section === 'Menu') {
+      const parts = splitCsv(value);
+      if (key === 'menu') ini.menus.push({ title: txt(parts[0]).replace(/&/g, ''), items: [] });
+      else if ((key === 'subMenu' || key === 'groupChildMenu') && ini.menus.length && parts[0] && !parts[0].startsWith('std_separator')) {
+        ini.menus[ini.menus.length - 1].items.push({ target: parts[0], label: txt(parts[1]) || parts[0], cond: conds(parts.slice(2)) });
+      }
+      continue;
+    }
+
+    if (section === 'UserDefined' || section === 'UiDialogs') {
+      const parts = splitCsv(value);
+      if (key === 'dialog') {
+        dialog = { id: parts[0], title: txt(parts[1]), fields: [], panels: [], commands: [] };
+        ini.dialogs.set(dialog.id, dialog);
+      } else if (dialog && (key === 'field' || key === 'slider')) {
+        const nome = parts[1] && !parts[1].startsWith('{') ? parts[1].trim() : undefined;
+        dialog.fields.push({ label: txt(parts[0]), name: nome, cond: conds(parts.slice(nome ? 2 : 1)) });
+      } else if (dialog && key === 'panel') {
+        dialog.panels.push({ id: parts[0], cond: conds(parts.slice(1)) });
+      } else if (dialog && key === 'commandButton') {
+        dialog.commands.push({ label: txt(parts[0]), cmd: (parts[1] ?? '').trim(), cond: conds(parts.slice(2)) });
+      }
+      continue;
+    }
+
+    if (section === 'CurveEditor') {
+      const parts = splitCsv(value);
+      if (key === 'curve') {
+        curve = { id: parts[0], title: txt(parts[1]) || parts[0], xLabel: '', yLabel: '', x: '', y: '' };
+        ini.curves.set(curve.id, curve);
+      } else if (curve && key === 'columnLabel') { curve.xLabel = txt(parts[0]); curve.yLabel = txt(parts[1]); }
+      else if (curve && key === 'xBins') { curve.x = parts[0]; curve.xLive = parts[1]; }
+      else if (curve && key === 'yBins' && !curve.y) curve.y = parts[0];
       continue;
     }
 

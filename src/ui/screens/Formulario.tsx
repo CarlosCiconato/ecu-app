@@ -1,7 +1,7 @@
 // Tela genérica de configurações: lê os campos do .ini e mostra cada um com
 // botões de mais/menos (números) ou botões de escolha (opções). Serve para
 // Configuração do motor, Sensores, Outras funções etc.
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { call, useLive, useStatus } from '../api';
 import { fmt } from '../format';
 import { FIOS, PINOS, PINO_NOME, PINO_TIPO } from '../../core/placa';
@@ -28,7 +28,7 @@ type Val = number | number[] | null;
 
 const isPinList = (list: string[]) => list.includes('PA0');
 
-export function Formulario({ sections }: { sections: SecaoDef[] }) {
+export function Formulario({ sections, extra }: { sections: SecaoDef[]; extra?: ReactNode }) {
   const s = useStatus();
   const [vals, setVals] = useState<Record<string, Val>>();
   const [opts, setOpts] = useState<Record<string, string[]>>({});
@@ -170,6 +170,7 @@ export function Formulario({ sections }: { sections: SecaoDef[] }) {
 
   return (
     <main className="screen" style={{ gap: 10, paddingTop: 10 }}>
+      {extra}
       {picking ? (
         <section className="card" style={{ flexGrow: 1, padding: 14, display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center' }}>

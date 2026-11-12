@@ -23,7 +23,7 @@ export const TILES: { tone: Tone; name: string; sub: string; go?: Screen; icon: 
 ];
 
 /** Para ECUs que não são a nossa (Speeduino): todas as tabelas do .ini dela. */
-export const TILE_TABELAS_ECU = { tone: amber, name: 'Tabelas da ECU', sub: 'Todos os mapas do .ini desta ECU', go: 'tabelasEcu' as Screen, icon: 'M3 4h18v16H3zM3 10h18M3 15h18M9 4v16M15 4v16' };
+export const TILE_TABELAS_ECU = { tone: amber, name: 'Funções da ECU', sub: 'Todos os ajustes, curvas e tabelas desta ECU', go: 'tabelasEcu' as Screen, icon: 'M3 4h18v16H3zM3 10h18M3 15h18M9 4v16M15 4v16' };
 
 export function Menu({ go }: { go: (s: Screen) => void }) {
   const ok = useDisponivel();

@@ -130,7 +130,10 @@ export function MapaTabela({ cfg }: { cfg: MapaConfig }) {
   const TABLE = cfg.tables[Math.min(3, Math.max(1, tune)) - 1];
   const s = useStatus();
   const { table, setTable, error } = useTable(TABLE);
-  const live = useLive(['RPMValue', 'MAPValue', 'TPSValue', 'baroPressure', 'injTimeTableYAxis', 'ignitionLoad', ...[cfg.x?.live, cfg.y?.live, cfg.yLiveName].filter((n): n is string => !!n)]);
+  // Speeduino e outras ECUs: eixos como a ECU manda (kPa, % TPS…), sem converter para bar, e o cursor
+  // ao vivo usa os canais que o .ini dela indica para cada tabela.
+  const cru = !!s.family && s.family !== 'rusefi' && !s.demo && !s.offline;
+  const live = useLive(['RPMValue', 'MAPValue', 'TPSValue', 'baroPressure', 'injTimeTableYAxis', 'ignitionLoad', ...[cfg.x?.live, cfg.y?.live, cfg.yLiveName, cru ? table?.xLive : undefined, cru ? table?.yLive : undefined].filter((n): n is string => !!n)]);
   const [sel, setSel] = useState<Sel>({ r0: 0, c0: 0, r1: 0, c1: 0 });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string>();
@@ -166,15 +169,16 @@ export function MapaTabela({ cfg }: { cfg: MapaConfig }) {
   if (!table) return <main className="screen"><span className="label">Lendo o mapa…</span></main>;
 
   const t: TableData = table;
-  const tps = !cfg.y && t.yUnits === '%';
+  const tps = !cfg.y && !cru && t.yUnits === '%';
+  const dec = (v: number) => (Number.isInteger(Math.round(v * 100) / 100) ? 0 : 1);
   const baro = live.baroPressure && live.baroPressure > 50 ? live.baroPressure : 101.3;
-  const yLabel = (kpa: number) => (cfg.y ? fmt(kpa, cfg.y.digits ?? 0) : tps ? `${fmt(kpa)}` : `${kpa - baro > 0 ? '+' : ''}${fmt((kpa - baro) / 100, 2)}`);
+  const yLabel = (kpa: number) => (cru && !cfg.y ? fmt(kpa, dec(kpa)) : cfg.y ? fmt(kpa, cfg.y.digits ?? 0) : tps ? `${fmt(kpa)}` : `${kpa - baro > 0 ? '+' : ''}${fmt((kpa - baro) / 100, 2)}`);
   const rowsTopDown = Array.from({ length: t.rows }, (_, i) => t.rows - 1 - i); // carga alta em cima
-  const liveC = nearest(t.xBins, cfg.x ? live[cfg.x.live] : live.RPMValue);
-  const xName = cfg.x?.name ?? 'RPM';
+  const liveC = nearest(t.xBins, cfg.x ? live[cfg.x.live] : cru && t.xLive && live[t.xLive] != null ? live[t.xLive] : live.RPMValue);
+  const xName = cfg.x?.name ?? (cru && t.xUnits ? t.xUnits : 'RPM');
   const xLabel = (x: number) => (cfg.x ? fmt(x, cfg.x.digits ?? 0) : x >= 1000 ? fmt(x / 1000, 1) + 'k' : fmt(x));
-  const yUnit = cfg.y ? cfg.y.unit : tps ? '%' : 'bar';
-  const yLive = cfg.y ? live[cfg.y.live] : cfg.yLiveName ? live[cfg.yLiveName] : cfg.msStrategy ? live.injTimeTableYAxis : live.ignitionLoad;
+  const yUnit = cfg.y ? cfg.y.unit : cru ? t.yUnits : tps ? '%' : 'bar';
+  const yLive = cru && !cfg.y ? (t.yLive ? live[t.yLive] : undefined) : cfg.y ? live[cfg.y.live] : cfg.yLiveName ? live[cfg.yLiveName] : cfg.msStrategy ? live.injTimeTableYAxis : live.ignitionLoad;
   const liveR = nearest(t.yBins, yLive ?? (tps ? live.TPSValue : live.MAPValue));
   const r0 = Math.min(sel.r0, sel.r1), r1 = Math.max(sel.r0, sel.r1);
   const c0 = Math.min(sel.c0, sel.c1), c1 = Math.max(sel.c0, sel.c1);
@@ -307,7 +311,7 @@ export function MapaTabela({ cfg }: { cfg: MapaConfig }) {
       <section className="card" style={{ flexGrow: 1, padding: 10, display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}
         onPointerUp={() => (dragging.current = false)} onPointerLeave={() => (dragging.current = false)}>
         <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 3 }}>
-          <span style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', alignSelf: 'end' }}>{cfg.y ? cfg.y.name : tps ? 'TPS %' : 'bar'} \ {xName}</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', alignSelf: 'end' }}>{cfg.y ? cfg.y.name : cru ? t.yUnits || 'Y' : tps ? 'TPS %' : 'bar'} \ {xName}</span>
           {t.xBins.map((x, c) => (
             <span key={c} className="num" style={{ fontSize: 14, fontWeight: 600, color: c === liveC ? 'var(--cyan)' : 'var(--muted)', textAlign: 'center' }}>{xLabel(x)}</span>
           ))}
@@ -350,7 +354,7 @@ export function MapaTabela({ cfg }: { cfg: MapaConfig }) {
         )}
         <div className="card" style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span className="label">{selCount > 1 ? `${selCount} células` : 'Célula selecionada'}</span>
-          <span style={{ fontSize: 14, fontWeight: 600 }}>{cfg.y ? `${cfg.y.name} ` : ''}{yLabel(t.yBins[r0])} {yUnit} · {fmt(t.xBins[c0], cfg.x?.digits ?? 0)} {cfg.x?.unit ?? 'RPM'}</span>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>{cfg.y ? `${cfg.y.name} ` : ''}{yLabel(t.yBins[r0])} {yUnit} · {fmt(t.xBins[c0], cfg.x?.digits ?? 0)} {cfg.x?.unit ?? (cru && t.xUnits ? t.xUnits : 'RPM')}</span>
           <span style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
             {typing !== undefined ? (<span style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%' }}>
               <span className="label" style={{ color: 'var(--amber)' }}>{typeMode === 'add' ? 'Somar (use − para tirar)' : typeMode === 'mul' ? 'Multiplicar por' : 'Novo valor'}</span>
