@@ -1,5 +1,7 @@
 # ECU — programa de ajuste da injeção
 
+> Este repositório é **só o programa de ajuste** (Mac e Windows), que funciona com a nossa ECU (rusEFI) e com a Speeduino. A placa, o firmware da placa e os manuais estão em [CarlosCiconato/ecu-placa](https://github.com/CarlosCiconato/ecu-placa).
+
 Programa para ajustar a nossa ECU (base rusEFI) no computador, no estilo dos programas profissionais.
 Funciona no **Mac** e no **Windows**, com a ECU no cabo USB, no simulador, em modo demonstração
 ou **sem ECU** (abrindo o arquivo do mapa).
