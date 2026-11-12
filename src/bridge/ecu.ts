@@ -38,6 +38,43 @@ export function tcpTransport(host: string, port: number): Promise<Transport> {
   });
 }
 
+/** Registro da conversa com a ECU (bytes enviados e recebidos), para achar defeito de conexão à distância. */
+export class RegistroConexao {
+  linhas: string[] = [];
+  parado = false;
+  private t0 = Date.now();
+  constructor(private arquivo?: string) {}
+  add(tipo: string, d?: Uint8Array | string) {
+    if (this.parado || this.linhas.length > 600) return;
+    const ms = String(Date.now() - this.t0).padStart(6);
+    let txt = '';
+    if (typeof d === 'string') txt = d;
+    else if (d) {
+      const b = d.subarray(0, 96);
+      txt = `${d.length} B  ${Buffer.from(b).toString('hex').replace(/(..)/g, '$1 ').trim()}${d.length > 96 ? ' …' : ''}  |${Array.from(b, (x) => (x >= 32 && x < 127 ? String.fromCharCode(x) : '.')).join('')}|`;
+    }
+    this.linhas.push(`${ms} ms  ${tipo}  ${txt}`);
+    this.salvar();
+  }
+  salvar() {
+    if (!this.arquivo) return;
+    try { fs.mkdirSync(path.dirname(this.arquivo), { recursive: true }); fs.writeFileSync(this.arquivo, this.linhas.join('\n') + '\n'); } catch { /* sem registro */ }
+  }
+}
+
+/** Transporte que anota no registro tudo o que passa. */
+export function comRegistro(t: Transport, r: RegistroConexao): Transport {
+  // Uma só inscrição no transporte de verdade, repassada a todos os clientes.
+  const ouvintes: ((d: Uint8Array) => void)[] = [];
+  t.onData((d) => { r.add('<-', d); for (const cb of ouvintes) cb(d); });
+  return {
+    write: (d) => { r.add('->', d); t.write(d); },
+    onData: (cb) => { ouvintes.push(cb); },
+    onClose: (cb) => t.onClose((e) => { r.add('fechou', e ? String((e as Error).message ?? e) : ''); cb(e); }),
+    close: () => t.close(),
+  };
+}
+
 /** Cabo USB: a placa rusEFI aparece como porta serial (CDC); o protocolo é o mesmo da rede. */
 export async function serialTransport(path: string): Promise<Transport> {
   const { SerialPort } = await import('serialport');
@@ -170,26 +207,38 @@ export class EcuSession extends EventEmitter {
     this.disconnect();
     this.lastConnect = () => this.connectWith(label, open, serial);
     this.setStatus({ state: 'conectando', message: label, progress: undefined, dirty: false, demo: false, faltaIni: false });
+    const arqReg = this.pastas ? path.join(path.dirname(this.pastas.cache), 'conexao-log.txt') : undefined;
+    const reg = new RegistroConexao(arqReg);
+    reg.add('inicio', `${label} · ${process.platform} · app ${process.env.ECU_VERSION ?? process.env.npm_package_version ?? ''}`);
     try {
-      this.transport = await open();
+      const bruto = await open();
+      reg.add('abriu');
+      this.transport = comRegistro(bruto, reg);
       this.client = new TsClient(this.transport);
       this.transport.onClose(() => {
-        if (this.status.state !== 'desconectado') this.setStatus({ state: 'erro', message: 'A conexão com a ECU caiu' });
+        // Só é "caiu" se já estava ligada; se fomos nós que fechamos por um erro, a mensagem do erro fica.
+        if (this.status.state === 'conectado' || this.status.state === 'lendo') this.setStatus({ state: 'erro', message: 'A conexão com a ECU caiu' });
         this.stopPolling();
       });
       // Ao religar, o simulador (e talvez a placa) ainda manda a resposta de um pedido da conexão
       // anterior, que vinha sendo lida como assinatura (achado no simulador real). Espera ela passar.
       // Pelo cabo, a Speeduino (Arduino Mega) reinicia quando a porta abre e fica uns 2 s surda:
       // tenta de novo algumas vezes antes de desistir.
-      await new Promise((r) => setTimeout(r, 250));
+      // O Arduino Mega fica ~1,5 s no bootloader e depois a Speeduino ainda inicia: não fala nada nesse tempo
+      // (bytes mandados ao bootloader só atrasam a partida). O TunerStudio espera 1 s (delayAfterPortOpen).
+      if (serial) this.setStatus({ message: `${label}: esperando a ECU reiniciar…` });
+      await new Promise((r) => setTimeout(r, serial ? 2500 : 250));
       let det: Awaited<ReturnType<typeof detectSignature>>;
-      for (let i = 0; i < (serial ? 4 : 3); i++) {
-        det = await detectSignature(this.transport, 1000);
+      const tentativas = serial ? 6 : 3;
+      for (let i = 0; i < tentativas; i++) {
+        reg.add('tentativa', String(i + 1));
+        det = await detectSignature(this.transport, serial ? 1500 : 1000);
         if (det) break;
-        this.setStatus({ message: `${label}: esperando a ECU responder…` });
-        await new Promise((r) => setTimeout(r, serial ? 800 : 400));
+        this.setStatus({ message: `${label}: esperando a ECU responder… (${i + 1}/${tentativas})` });
+        await new Promise((r) => setTimeout(r, serial ? 1000 : 400));
       }
-      if (!det!) throw new Error('A ECU não respondeu. Confira o cabo, a porta escolhida e se a ECU está ligada.');
+      if (!det!) throw new Error(`A ECU não respondeu. Confira o cabo, a porta escolhida, se a ECU está ligada e se o TunerStudio está fechado.${arqReg ? ` Registro da conversa: ${arqReg}` : ''}`);
+      reg.add('assinatura', `${det.signature} · envelope ${det.envelope}`);
       const sig = det.signature;
       this.client = new TsClient(this.transport);
       // Acha o .ini desta ECU: o nosso, a biblioteca (Speeduino), os guardados ou o servidor da rusEFI.
@@ -211,6 +260,7 @@ export class EcuSession extends EventEmitter {
       // O .ini diz se esta versão usa envelope (a Speeduino nova também responde ao 'Q' cru,
       // então a detecção sozinha pode enganar).
       this.client.useIni(this.ini);
+      reg.add('ini', `${this.ini.signature} (${fonte}) envelope ${this.ini.comms.envelope}`);
       this.setStatus({ ecuSignature: sig, signatureMatch: true, iniSignature: this.ini.signature, family: this.ini.family, iniFonte: fonte, faltaIni: false, message: aviso });
       this.setStatus({ state: 'lendo', progress: 0 });
       this.page1 = await this.client.readPage(this.ini, 1, (d, t) => this.setStatus({ progress: d / t }));
@@ -219,9 +269,13 @@ export class EcuSession extends EventEmitter {
       this.flash = this.page1.slice(); this.history = [];
       this.resolverExpressoes();
       this.setStatus({ state: 'conectado', progress: 1, message: aviso, undo: 0 });
+      reg.add('conectado', `.ini ${this.ini.signature} (${fonte})`);
+      reg.parado = true; // daqui em diante só leituras ao vivo: não precisa anotar
       this.startPolling();
     } catch (e) {
-      this.setStatus({ state: 'erro', message: (e as Error).message });
+      reg.add('erro', (e as Error).stack ?? String(e));
+      const m = (e as Error).message;
+      this.setStatus({ state: 'erro', message: m.includes('Registro da conversa') || !arqReg ? m : `${m} (registro: ${arqReg})` });
       this.transport?.close();
     }
   }

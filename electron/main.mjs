@@ -3,6 +3,7 @@ import { app, BrowserWindow, shell } from 'electron';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 process.env.ECU_ROOT ??= app.getAppPath();
+process.env.ECU_VERSION ??= app.getVersion();
 process.env.PORT ??= '0'; // porta livre qualquer, só para dentro do app
 
 const { ready } = await import('../build/bridge.mjs');

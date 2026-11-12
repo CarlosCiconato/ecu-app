@@ -120,6 +120,9 @@ export function Conexao() {
           <div className="bar" style={{ height: 10 }}><span style={{ height: 10, width: `${Math.round((s.progress ?? 0) * 100)}%`, background: 'var(--amber)' }} /></div>
         )}
         {s.message && <div className={`notice ${s.state === 'erro' ? 'err' : 'ok'}`}>{s.message}</div>}
+        {s.state === 'erro' && /registro/i.test(s.message ?? '') && (
+          <button className="btn" onClick={() => call('openFolder')}>Abrir a pasta do registro (conexao-log.txt)</button>
+        )}
         <EscolherIni />
         {s.state === 'conectado' && !s.demo && s.family && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
