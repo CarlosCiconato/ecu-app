@@ -1,6 +1,6 @@
 // Tela inicial do computador (como a dos programas profissionais): mapa ativo em destaque, ECUs disponíveis,
 // blocos de Mapas e Logs com atalhos e os arquivos abertos recentemente.
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { call, setLog, useStatus } from '../api';
 import type { Screen } from '../App';
 import { openFtmLater } from './ArquivoFtm';
@@ -127,29 +127,29 @@ export function Inicio({ go }: { go: (s: Screen) => void }) {
       <section className="ini-band mapas">
         <h2>MAPAS</h2>
         <div className="ini-tiles">
-          <Tile icon={[IC.ecu, IC.novo]} label="Abrir mapa da ECU" disabled={!on} onClick={() => go('mapa')} />
-          <Tile icon={[IC.pc, IC.novo]} label="Abrir mapa do PC" onClick={() => mapRef.current?.click()} />
-          <Tile icon={[IC.novo]} label="Assistente de novo mapa" disabled={!on} onClick={() => go('mapaPadrao')} />
-          <Tile icon={[IC.exemplo]} label="Mapas de exemplo" disabled={!exemplos.length} onClick={() => exemplos[0] && openMap(exemplos[0])} />
-          <Tile icon={[IC.importar]} label="Importar mapa .ftm" onClick={() => go('ftm')} />
+          {Tile({ icon: [IC.ecu, IC.novo], label: "Abrir mapa da ECU", disabled: !on, onClick: () => go('mapa') })}
+          {Tile({ icon: [IC.pc, IC.novo], label: "Abrir mapa do PC", onClick: () => mapRef.current?.click() })}
+          {Tile({ icon: [IC.novo], label: "Assistente de novo mapa", onClick: () => go('mapaPadrao') })}
+          {Tile({ icon: [IC.exemplo], label: "Mapas de exemplo", disabled: !exemplos.length, onClick: () => exemplos[0] && openMap(exemplos[0]) })}
+          {Tile({ icon: [IC.importar], label: "Importar mapa .ftm", onClick: () => go('ftm') })}
         </div>
         <span className="ini-sub">Abertos recentemente</span>
         <div className="ini-files">
           {mapas.length === 0 && <span style={{ color: 'var(--muted)', fontSize: 13 }}>Nenhum mapa salvo ainda. Use "Salvar como" na barra de cima.</span>}
-          {mapas.slice(0, 8).map((f) => <Recente key={f.name} f={f} onOpen={() => openMap(f)} />)}
+          {mapas.slice(0, 8).map((f) => <Fragment key={f.name}>{Recente({ f: f, onOpen: () => openMap(f) })}</Fragment>)}
         </div>
       </section>
 
       <section className="ini-band logs">
         <h2>LOGS</h2>
         <div className="ini-tiles">
-          <Tile icon={[IC.ecu, IC.log]} label="Gravar log da ECU" disabled={!on || !!s.offline} onClick={() => go('datalogger')} />
-          <Tile icon={[IC.pc, IC.log]} label="Abrir log do PC" onClick={() => logRef.current?.click()} />
+          {Tile({ icon: [IC.ecu, IC.log], label: "Gravar log da ECU", disabled: !on || !!s.offline, onClick: () => go('datalogger') })}
+          {Tile({ icon: [IC.pc, IC.log], label: "Abrir log do PC", onClick: () => logRef.current?.click() })}
         </div>
         <span className="ini-sub">Abertos recentemente</span>
         <div className="ini-files">
           {logs.length === 0 && <span style={{ color: 'var(--muted)', fontSize: 13 }}>Nenhum log salvo ainda.</span>}
-          {logs.slice(0, 8).map((f) => <Recente key={f.name} f={f} onOpen={() => openLogFile(f.name).then(() => go('datalogger'), err)} />)}
+          {logs.slice(0, 8).map((f) => <Fragment key={f.name}>{Recente({ f: f, onOpen: () => openLogFile(f.name).then(() => go('datalogger'), err) })}</Fragment>)}
         </div>
       </section>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', color: 'var(--muted)', fontSize: 12 }}>

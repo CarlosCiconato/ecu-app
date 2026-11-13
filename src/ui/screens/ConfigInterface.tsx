@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { call, useLive, useStatus } from '../api';
 import { fmt } from '../format';
-import { setPrefs, usePrefs, type Prefs } from '../prefs';
+import { distOut, distUnit, setPrefs, usePrefs, type FluxoUn, type Prefs } from '../prefs';
 import type { Screen } from '../App';
 import { GAUGES, NOMES_PAINEL, PAINEIS_PADRAO, SLOTS, zerarPicos } from './Painel';
 export const APP_VERSION = '0.30';
@@ -134,14 +134,67 @@ export function PainelCfg() {
   );
 }
 
-/** 23.11: unidades de medida. */
-export function Unidades() {
+/** Um grupo de opções de unidade (estilo dos programas profissionais: título e bolinhas). */
+function Grupo<K extends keyof Prefs>({ titulo, k, opcoes, aoEscolher }: { titulo: string; k: K; opcoes: [Prefs[K], string][]; aoEscolher?: (v: Prefs[K]) => void }) {
+  const p = usePrefs();
   return (
-    <main className="screen" style={{ flexDirection: 'row', gap: 12, paddingTop: 10 }}>
-      <Card title="Unidades">
-        <Choice label="Pressão (turbo, óleo, combustível)" k="pressure" options={[['bar', 'bar'], ['psi', 'psi']]} />
-        <Choice label="Mistura" k="lambda" options={[['lambda', 'Lambda'], ['afr', 'AFR (gasolina)']]} />
-      </Card>
+    <fieldset className="un-grupo">
+      <legend>{titulo}</legend>
+      {opcoes.map(([v, t]) => (
+        <label key={String(v)} className={p[k] === v ? 'on' : ''}>
+          <input type="radio" name={String(k)} checked={p[k] === v} onChange={() => { setPrefs({ [k]: v } as Partial<Prefs>); aoEscolher?.(v); }} />
+          <span>{t}</span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+const FLUXOS: [FluxoUn, string][] = [['Lmin', 'Litros por minuto (L/min)'], ['Lh', 'Litros por hora (L/h)'], ['ccmin', 'Centímetros cúbicos por minuto (cc/min)'],
+  ['gpm', 'Galões por minuto (GPM)'], ['gph', 'Galões por hora (GPH)'], ['lbh', 'Libras por hora (lb/h)'], ['gs', 'Gramas por segundo (g/s)']];
+
+/** 23.11: unidades de medida. Valem para o painel, a barra de cima, o painel ao vivo e o mapa padrão. */
+export function Unidades() {
+  const s = useStatus();
+  const [aviso, setAviso] = useState<string>();
+  // "AFR pelo combustível do mapa": lê o AFR estequiométrico configurado na ECU
+  const lerEstequiometrica = (v: Prefs['lambda']) => {
+    if (v !== 'afrMapa') return;
+    if (s.state !== 'conectado') { setAviso('Sem ECU: usando 14,7 (gasolina) até conectar.'); return; }
+    call<Record<string, number | null>>('constants', { names: ['stoichRatioPrimary'] }).then((c) => {
+      const k = c.stoichRatioPrimary;
+      if (k && k > 3) { setPrefs({ estequiometrica: k }); setAviso(`Combustível do mapa: AFR ${fmt(k, 1)}.`); } else setAviso('A ECU não informa o combustível; usando 14,7.');
+    }, () => setAviso('Não consegui ler o combustível da ECU; usando 14,7.'));
+  };
+  return (
+    <main className="screen un-tela">
+      <div className="un-col">
+        <Grupo titulo="Temperatura" k="temp" opcoes={[['C', 'Celsius (°C)'], ['F', 'Fahrenheit (°F)']]} />
+        <Grupo titulo="Velocidade" k="speed" opcoes={[['kmh', 'Km/h'], ['mph', 'Mph']]} />
+        <Grupo titulo="Sensor de oxigênio" k="lambda" aoEscolher={lerEstequiometrica} opcoes={[['lambda', 'Lambda (λ)'], ['afrMapa', 'AFR pelo combustível do mapa'],
+          ['afr', 'AFR gasolina (14,7)'], ['afrE100', 'AFR etanol E100 (9,0)'], ['afrMetanol', 'AFR metanol (6,4)']]} />
+        {aviso && <div className="notice ok" style={{ fontSize: 13 }}>{aviso}</div>}
+      </div>
+      <div className="un-col">
+        <Grupo titulo="Volume de combustível" k="fuelVol" opcoes={[['L', 'Litros (L)'], ['gal', 'Galões (gal)']]} />
+        <Grupo titulo="Volume do motor" k="engineVol" opcoes={[['cc', 'Centímetros cúbicos (cm³)'], ['L', 'Litros (L)'], ['in3', 'Polegadas cúbicas (in³)']]} />
+        <Grupo titulo="Fluxo" k="flow" opcoes={FLUXOS} />
+      </div>
+      <div className="un-col">
+        <Grupo titulo="Tamanho" k="size" opcoes={[['mm', 'Milímetros (mm)'], ['in', 'Polegadas (pol)']]} />
+        <Grupo titulo="Pressão" k="pressure" opcoes={[['bar', 'bar'], ['psi', 'psi'], ['kPa', 'kPa']]} />
+        <Grupo titulo="Pressão do pneu" k="tirePressure" opcoes={[['psi', 'psi'], ['bar', 'bar'], ['kPa', 'kPa']]} />
+      </div>
+      <div className="un-col">
+        <Grupo titulo="Vazão dos injetores" k="injFlow" opcoes={[FLUXOS[5], FLUXOS[0], FLUXOS[1], FLUXOS[2], FLUXOS[3], FLUXOS[4], FLUXOS[6]]} />
+        <Grupo titulo="Densidade" k="density" opcoes={[['gcc', 'Gramas por centímetro cúbico (g/cm³)'], ['lbft3', 'Libra por pé cúbico (lb/ft³)']]} />
+        <Grupo titulo="Distância" k="distance" opcoes={[['km', 'Quilômetros (km)'], ['m', 'Metros (m)'], ['mi', 'Milhas (mi)'], ['ft', 'Pés (ft)']]} />
+      </div>
+      <div className="un-col">
+        <Grupo titulo="Potência" k="power" opcoes={[['kW', 'Quilowatt (kW)'], ['cv', 'Cavalo vapor (CV)'], ['hp', 'Horsepower (HP)']]} />
+        <Grupo titulo="Torque" k="torque" opcoes={[['Nm', 'Newton metro (N·m)'], ['kgfm', 'Quilograma força metro (kgf·m)'], ['lbft', 'Libra pé (lb·ft)']]} />
+        <Grupo titulo="Consumo" k="consumption" opcoes={[['kmL', 'Quilômetro por litro (km/L)'], ['mpg', 'Milhas por galão (mpg)'], ['L100', 'Litro por 100 km (L/100km)']]} />
+      </div>
     </main>
   );
 }
@@ -150,6 +203,8 @@ export function Unidades() {
 export function Versao() {
   const s = useStatus();
   const v = useLive(['odometerTotal', 'odometerPartial', 'hourMeterTotal', 'hourMeterPartial']);
+  const un = usePrefs();
+  const km = (m: number | null | undefined) => `${fmt(distOut((m ?? 0) / 1000, un.distance), un.distance === 'km' || un.distance === 'mi' ? 1 : 0)} ${distUnit(un.distance)}`;
   const [msg, setMsg] = useState<string>();
   const hms = (x: number | null | undefined) => (x == null ? '–' : `${Math.floor(x / 3600)}h ${String(Math.floor((x % 3600) / 60)).padStart(2, '0')}min`);
   const linha = (a: string, b: string) => (
@@ -164,8 +219,8 @@ export function Versao() {
         {s.signatureMatch === false && <div className="notice err">Versões diferentes: atualize o .ini do app antes de mexer no mapa.</div>}
       </Card>
       <Card title="Odômetro e horímetro">
-        {linha('Odômetro total', `${fmt((v.odometerTotal ?? 0) / 1000, 1)} km`)}
-        {linha('Odômetro parcial', `${fmt((v.odometerPartial ?? 0) / 1000, 1)} km`)}
+        {linha('Odômetro total', km(v.odometerTotal))}
+        {linha('Odômetro parcial', km(v.odometerPartial))}
         {linha('Horímetro total', hms(v.hourMeterTotal))}
         {linha('Horímetro parcial', hms(v.hourMeterPartial))}
         <button className="btn" style={{ height: 48 }} disabled={s.state !== 'conectado'}

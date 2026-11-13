@@ -99,6 +99,15 @@ wss.on('connection', (ws) => {
           reply(path.basename(f));
           break;
         }
+        case 'mapNew': {
+          if (ecu.status.state === 'conectado' && !ecu.status.offline) throw new Error('Desconecte da ECU para criar um mapa novo no computador.');
+          const base = String(msg.name || 'Mapa novo').replace(/\.ecumap$/i, '');
+          let f = path.join(kindDir('mapas'), safeName(`${base}.ecumap`));
+          for (let n = 2; fs.existsSync(f); n++) f = path.join(kindDir('mapas'), safeName(`${base} ${n}.ecumap`));
+          ecu.newOffline(f);
+          reply(path.basename(f));
+          break;
+        }
         case 'mapLoad': {
           const file = path.join(kindDir('mapas'), safeName(String(msg.name || 'Mapa aberto.ecumap')));
           const raw = msg.data ? Buffer.from(String(msg.data), 'base64').toString('utf8') : fs.readFileSync(file, 'utf8');

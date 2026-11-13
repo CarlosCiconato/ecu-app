@@ -1,7 +1,7 @@
 // Layout de computador (Mac/PC), no estilo dos programas profissionais para computador (manual de referência, p. 51-52):
 // barra superior, barra lateral de grupos, submenu de funções, abas, área de ajuste,
 // painel em tempo real embaixo e barra de status.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { openFtmLater } from './screens/ArquivoFtm';
 import { lembrarMapa } from './screens/Inicio';
 import { call, isRecording, startLog, stopLog, useLive, useLog, useStatus } from './api';
@@ -76,6 +76,28 @@ function allFunctions(): { go: Screen; label: string; where: string }[] {
   }
   for (const [, m] of Object.entries(SUBMENUS)) for (const i of m.items) if (!SUBMENUS[i.go]) out.push({ go: i.go, label: i.label, where: m.title });
   return out.filter((x, i, a) => a.findIndex((y) => y.go === x.go) === i);
+}
+
+// Botões da barra de cima declarados FORA do Desktop: componente declarado dentro é recriado a cada
+// atualização dos dados ao vivo (demonstração manda ~20 por segundo) e o clique se perde no meio.
+function Tb({ icon, label, onClick, disabled, hot, title }: { icon: string; label: string; onClick: () => void; disabled?: boolean; hot?: boolean; title?: string }) {
+  return (
+    <button className={`dk-tb ${hot ? 'hot' : ''}`} disabled={disabled} title={title ?? label} onClick={(e) => { e.stopPropagation(); onClick(); }}>
+      <Icon d={icon} size={18} /><span>{label}</span>
+    </button>
+  );
+}
+function Drop({ icon, label, items, aberto, alternar, abrir }: { icon: string; label: string; items: [Screen, string][]; aberto: boolean; alternar: () => void; abrir: (sc: Screen) => void }) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <Tb icon={icon} label={`${label} ▾`} onClick={alternar} />
+      {aberto && (
+        <div className="ctx" style={{ position: 'absolute', top: 50, left: 0 }}>
+          {items.map(([sc, l]) => <button key={sc} onClick={() => abrir(sc)}><span>{l}</span></button>)}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function Desktop() {
@@ -157,21 +179,6 @@ export function Desktop() {
   });
   const TOOLS: [Screen, string][] = [['ajustes', 'Gerenciador de ajustes'], ['mapaPadrao', 'Gerar mapa padrão'], ['ftm', 'Importar mapa .ftm (.ftm)'], ['ltft', 'Correção de longo prazo'], ['testes', 'Teste de saídas'], ['diagnostico', 'Diagnóstico'], ['senhas', 'Senhas']];
   const PREFS: [Screen, string][] = [['tema', 'Tema do programa (cores)'], ['interface', 'Unidades de medida'], ['telaSom', 'Tela, som e tela inicial'], ['painelCfg', 'Configuração do painel'], ['versao', 'Versões, odômetro e horímetro']];
-  const Tb = ({ icon, label, onClick, disabled, hot, title }: { icon: string; label: string; onClick: () => void; disabled?: boolean; hot?: boolean; title?: string }) => (
-    <button className={`dk-tb ${hot ? 'hot' : ''}`} disabled={disabled} title={title ?? label} onClick={(e) => { e.stopPropagation(); onClick(); }}>
-      <Icon d={icon} size={18} /><span>{label}</span>
-    </button>
-  );
-  const Drop = ({ id, icon, label, items }: { id: string; icon: string; label: string; items: [Screen, string][] }) => (
-    <div style={{ position: 'relative' }}>
-      <Tb icon={icon} label={`${label} ▾`} onClick={() => setDrop(drop === id ? undefined : id)} />
-      {drop === id && (
-        <div className="ctx" style={{ position: 'absolute', top: 50, left: 0 }}>
-          {items.map(([sc, l]) => <button key={sc} onClick={() => { setDrop(undefined); openTab(sc); }}><span>{l}</span></button>)}
-        </div>
-      )}
-    </div>
-  );
   const tuneName = prefs.nomesAjuste?.[Math.max(1, tune) - 1];
   // funções ligadas/desligadas no mapa
   const [ativos, setAtivos] = useState<Record<string, number | null>>({});
@@ -234,8 +241,8 @@ export function Desktop() {
           hot={!!log?.recording} onClick={() => (isRecording() ? stopLog() : startLog(LOG_CH.map((c) => c[0])))} />
         </div></div>
         <span className="dk-sep" />
-        <Drop id="ferr" icon="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" label="Ferramentas" items={TOOLS} />
-        <Drop id="pref" icon="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM19 12l2-1-1-3-2 .2-1.2-1.4.4-2-2.8-1.4L13 5h-2L9.6 3.4 6.8 4.8l.4 2L6 8.2 4 8 3 11l2 1-2 1 1 3 2-.2 1.2 1.4-.4 2 2.8 1.4L11 19h2l1.4 1.6 2.8-1.4-.4-2 1.2-1.4 2 .2 1-3z" label="Preferências" items={PREFS} />
+        <Drop aberto={drop === 'ferr'} alternar={() => setDrop(drop === 'ferr' ? undefined : 'ferr')} abrir={(sc) => { setDrop(undefined); openTab(sc); }} icon="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" label="Ferramentas" items={TOOLS} />
+        <Drop aberto={drop === 'pref'} alternar={() => setDrop(drop === 'pref' ? undefined : 'pref')} abrir={(sc) => { setDrop(undefined); openTab(sc); }} icon="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM19 12l2-1-1-3-2 .2-1.2-1.4.4-2-2.8-1.4L13 5h-2L9.6 3.4 6.8 4.8l.4 2L6 8.2 4 8 3 11l2 1-2 1 1 3 2-.2 1.2 1.4-.4 2 2.8 1.4L11 19h2l1.4 1.6 2.8-1.4-.4-2 1.2-1.4 2 .2 1-3z" label="Preferências" items={PREFS} />
         <span style={{ flexGrow: 1 }} />
         <div className="dk-search">
           <Icon d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4" size={16} />
@@ -459,7 +466,7 @@ function TabSwitcher({ tabs, active, setActive, closeTab }: { tabs: Screen[]; ac
   );
   return (
     <div className="dk-tabs">
-      {active ? <Pill sc={active} big /> : <span style={{ color: 'var(--muted)', fontSize: 13, padding: '0 8px' }}>Nenhuma função aberta</span>}
+      {active ? Pill({ sc: active, big: true }) : <span style={{ color: 'var(--muted)', fontSize: 13, padding: '0 8px' }}>Nenhuma função aberta</span>}
       <button className="dk-tablist" title="Funções abertas" onClick={(e) => { e.stopPropagation(); setOpen(!open); }}>
         <span>{tabs.length}</span><Icon d={open ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} size={16} />
       </button>
@@ -469,7 +476,7 @@ function TabSwitcher({ tabs, active, setActive, closeTab }: { tabs: Screen[]; ac
           {groups.map(([g, list]) => (
             <div key={g}>
               <div className="dk-tabgrp" style={{ borderColor: GROUP_COLOR[g] ?? '#A3A7AE' }}>{GROUPS.find((x) => x.id === g)?.name ?? 'Outras'}</div>
-              {list.map((sc) => <Pill key={sc} sc={sc} />)}
+              {list.map((sc) => <Fragment key={sc}>{Pill({ sc: sc })}</Fragment>)}
             </div>
           ))}
           {tabs.length > 1 && <button className="dk-closeall" onClick={() => { tabs.filter((t) => t !== active).forEach(closeTab); setOpen(false); }}>Fechar as outras</button>}

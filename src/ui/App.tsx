@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLive, useStatus } from './api';
 import { fmt } from './format';
-import { pressure, usePrefs } from './prefs';
+import { pressDigits, pressure, tempOut, tempUnit, usePrefs } from './prefs';
 import { Conexao } from './screens/Conexao';
 import { Painel } from './screens/Painel';
 import { MapaIgnicao, MapaInjecao, MapaTabela, TABELAS } from './screens/MapaInjecao';
@@ -79,8 +79,8 @@ function TopBar({ screen, go }: { screen: Screen; go: (s: Screen) => void }) {
       {s.state === 'conectado' && (
         <div className="quick">
           <span><span>RPM</span>{fmt(v.RPMValue)}</span>
-          <span><span>Turbo</span>{fmt(boost, p.pressure === 'psi' ? 1 : 2)} {p.pressure}</span>
-          <span><span>Motor</span>{fmt(v.coolant)} °C</span>
+          <span><span>Turbo</span>{fmt(boost, pressDigits(p.pressure, 2))} {p.pressure}</span>
+          <span><span>Motor</span>{fmt(v.coolant != null ? tempOut(v.coolant, p.temp) : null)} {tempUnit(p.temp)}</span>
         </div>
       )}
     </header>

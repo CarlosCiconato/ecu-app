@@ -1,7 +1,13 @@
 import { useLive, useStatus } from '../api';
 import type { Screen } from '../App';
 import { fmt } from '../format';
-import { lambdaOut, pressure, setPrefs, usePrefs, type Prefs } from '../prefs';
+import { estequiometrica, lambdaOut, lambdaUnit, pressDigits, pressRange, pressure, setPrefs, speedOut, speedUnit, tempOut, tempUnit, usePrefs, type Prefs } from '../prefs';
+
+/** Mostrador de temperatura (limites em °C) na unidade escolhida. */
+const tempG = (c: number | null | undefined, p: Prefs, min: number, max: number, warnC?: number) => ({ value: c != null ? tempOut(c, p.temp) : null, digits: 0, unit: tempUnit(p.temp),
+  min: tempOut(min, p.temp), max: tempOut(max, p.temp), color: 'var(--text)', warn: warnC == null ? undefined : (x: number) => x > tempOut(warnC, p.temp) });
+const speedG = (k: number | null | undefined, p: Prefs) => ({ value: k != null ? speedOut(k, p.speed) : null, digits: 0, unit: speedUnit(p.speed), min: 0, max: Math.round(speedOut(300, p.speed)), color: 'var(--text)' });
+const pressG = (kpa: number | null | undefined, p: Prefs) => ({ value: kpa != null ? pressure(kpa, p.pressure) : null, digits: pressDigits(p.pressure, 1), unit: p.pressure, min: 0, max: pressRange(10, p.pressure), color: 'var(--text)' });
 
 
 interface Gauge { name: string; value: number | null; digits: number; unit: string; min: number; max: number; color: string; note?: string; warn?: (v: number) => boolean }
@@ -10,35 +16,35 @@ interface Gauge { name: string; value: number | null; digits: number; unit: stri
 type V = Record<string, number | null>;
 export const GAUGES: Record<string, { name: string; ch: string[]; make: (v: V, p: Prefs) => Omit<Gauge, 'name'> }> = {
   boost: { name: 'Pressão do turbo', ch: ['MAPValue', 'baroPressure'], make: (v, p) => {
-    const psi = p.pressure === 'psi';
-    return { value: v.MAPValue != null && v.baroPressure != null ? pressure(v.MAPValue - v.baroPressure, p.pressure) : null, digits: psi ? 1 : 2, unit: p.pressure, min: psi ? -15 : -1, max: psi ? 36 : 2.5, color: 'var(--amber)', warn: (x) => x > (psi ? 29 : 2) };
+    const u = p.pressure;
+    return { value: v.MAPValue != null && v.baroPressure != null ? pressure(v.MAPValue - v.baroPressure, u) : null, digits: pressDigits(u, 2), unit: u, min: pressRange(-1, u), max: pressRange(2.5, u), color: 'var(--amber)', warn: (x) => x > pressRange(2, u) };
   } },
   lambda: { name: 'Lambda', ch: ['lambdaValue', 'targetLambda'], make: (v, p) => {
-    const afr = p.lambda === 'afr';
-    return { value: v.lambdaValue != null ? lambdaOut(v.lambdaValue, p.lambda) : null, digits: afr ? 1 : 2, unit: afr ? ':1' : 'λ', min: afr ? 8.8 : 0.6, max: afr ? 19 : 1.3, color: 'var(--green)',
-      note: `Alvo ${fmt(v.targetLambda != null ? lambdaOut(v.targetLambda, p.lambda) : null, afr ? 1 : 2)}` };
+    const afr = p.lambda !== 'lambda', k = estequiometrica(p);
+    return { value: v.lambdaValue != null ? lambdaOut(v.lambdaValue, p.lambda, p) : null, digits: afr ? 1 : 2, unit: lambdaUnit(p.lambda), min: Math.round(0.6 * k * 10) / 10, max: Math.round(1.3 * k * 10) / 10, color: 'var(--green)',
+      note: `Alvo ${fmt(v.targetLambda != null ? lambdaOut(v.targetLambda, p.lambda, p) : null, afr ? 1 : 2)}` };
   } },
   inj: { name: 'Tempo de injeção', ch: ['actualLastInjection', 'injectorDutyCycle'], make: (v) => ({ value: v.actualLastInjection, digits: 2, unit: 'ms', min: 0, max: 25, color: 'var(--cyan)', note: `Duty ${fmt(v.injectorDutyCycle)} %` }) },
   duty: { name: 'Duty dos bicos', ch: ['injectorDutyCycle'], make: (v) => ({ value: v.injectorDutyCycle, digits: 0, unit: '%', min: 0, max: 100, color: 'var(--cyan)', warn: (x) => x > 85 }) },
   adv: { name: 'Avanço', ch: ['ignitionAdvanceCyl1'], make: (v) => ({ value: v.ignitionAdvanceCyl1, digits: 1, unit: '°', min: -10, max: 50, color: 'var(--cyan)' }) },
-  clt: { name: 'Temperatura do motor', ch: ['coolant'], make: (v) => ({ value: v.coolant, digits: 0, unit: '°C', min: 40, max: 140, color: 'var(--text)', warn: (x) => x > 105 }) },
-  iat: { name: 'Temperatura do ar', ch: ['intake'], make: (v) => ({ value: v.intake, digits: 0, unit: '°C', min: 0, max: 100, color: 'var(--text)', warn: (x) => x > 65 }) },
-  oil: { name: 'Pressão de óleo', ch: ['oilPressure'], make: (v, p) => ({ value: v.oilPressure != null ? pressure(v.oilPressure, p.pressure) : null, digits: p.pressure === 'psi' ? 0 : 1, unit: p.pressure, min: 0, max: p.pressure === 'psi' ? 145 : 10, color: 'var(--text)' }) },
-  oilT: { name: 'Temperatura do óleo', ch: ['oilTemp'], make: (v) => ({ value: v.oilTemp, digits: 0, unit: '°C', min: 0, max: 150, color: 'var(--text)', warn: (x) => x > 130 }) },
-  fuelP: { name: 'Pressão de combustível', ch: ['lowFuelPressure'], make: (v, p) => ({ value: v.lowFuelPressure != null ? pressure(v.lowFuelPressure, p.pressure) : null, digits: p.pressure === 'psi' ? 0 : 1, unit: p.pressure, min: 0, max: p.pressure === 'psi' ? 145 : 10, color: 'var(--text)' }) },
+  clt: { name: 'Temperatura do motor', ch: ['coolant'], make: (v, p) => tempG(v.coolant, p, 40, 140, 105) },
+  iat: { name: 'Temperatura do ar', ch: ['intake'], make: (v, p) => tempG(v.intake, p, 0, 100, 65) },
+  oil: { name: 'Pressão de óleo', ch: ['oilPressure'], make: (v, p) => pressG(v.oilPressure, p) },
+  oilT: { name: 'Temperatura do óleo', ch: ['oilTemp'], make: (v, p) => tempG(v.oilTemp, p, 0, 150, 130) },
+  fuelP: { name: 'Pressão de combustível', ch: ['lowFuelPressure'], make: (v, p) => pressG(v.lowFuelPressure, p) },
   batt: { name: 'Bateria', ch: ['VBatt'], make: (v) => ({ value: v.VBatt, digits: 1, unit: 'V', min: 8, max: 16, color: 'var(--text)', warn: (x) => x < 11.5 }) },
   tps: { name: 'Borboleta (TPS)', ch: ['TPSValue'], make: (v) => ({ value: v.TPSValue, digits: 0, unit: '%', min: 0, max: 100, color: 'var(--text)' }) },
   pedal: { name: 'Pedal', ch: ['throttlePedalPosition'], make: (v) => ({ value: v.throttlePedalPosition, digits: 0, unit: '%', min: 0, max: 100, color: 'var(--text)' }) },
-  speed: { name: 'Velocidade', ch: ['vehicleSpeedKph'], make: (v) => ({ value: v.vehicleSpeedKph, digits: 0, unit: 'km/h', min: 0, max: 300, color: 'var(--text)' }) },
+  speed: { name: 'Velocidade', ch: ['vehicleSpeedKph'], make: (v, p) => speedG(v.vehicleSpeedKph, p) },
   gear: { name: 'Marcha', ch: ['detectedGear'], make: (v) => ({ value: v.detectedGear, digits: 0, unit: 'ª', min: 0, max: 6, color: 'var(--text)' }) },
-  egt: { name: 'EGT 1', ch: ['egt1'], make: (v) => ({ value: v.egt1, digits: 0, unit: '°C', min: 0, max: 1100, color: 'var(--text)', warn: (x) => x > 950 }) },
+  egt: { name: 'EGT 1', ch: ['egt1'], make: (v, p) => tempG(v.egt1, p, 0, 1100, 950) },
   flex: { name: 'Etanol', ch: ['flexPercent'], make: (v) => ({ value: v.flexPercent, digits: 0, unit: '%', min: 0, max: 100, color: 'var(--green)' }) },
   wmi: { name: 'Água/metanol', ch: ['wmiDuty', 'wmiStatus'], make: (v) => ({ value: v.wmiDuty, digits: 0, unit: '%', min: 0, max: 100, color: 'var(--cyan)',
     note: ['Desligada', 'Pronta', 'Injetando', 'Tanque baixo', 'FALHA: tanque vazio'][v.wmiStatus ?? 0], warn: () => (v.wmiStatus ?? 0) >= 3 }) },
   slip: { name: 'Patinagem', ch: ['wheelSlip'], make: (v) => ({ value: v.wheelSlip, digits: 0, unit: '%', min: 0, max: 50, color: 'var(--amber)', warn: (x) => x > 15 }) },
-  rodaD: { name: 'Roda dianteira', ch: ['wheelSpeedFront'], make: (v) => ({ value: v.wheelSpeedFront, digits: 0, unit: 'km/h', min: 0, max: 300, color: 'var(--text)' }) },
-  rodaT: { name: 'Roda traseira', ch: ['wheelSpeedRear'], make: (v) => ({ value: v.wheelSpeedRear, digits: 0, unit: 'km/h', min: 0, max: 300, color: 'var(--text)' }) },
-  ic: { name: 'Temperatura do intercooler', ch: ['compressorDischargeTemp'], make: (v) => ({ value: v.compressorDischargeTemp, digits: 0, unit: '°C', min: 0, max: 150, color: 'var(--text)' }) },
+  rodaD: { name: 'Roda dianteira', ch: ['wheelSpeedFront'], make: (v, p) => speedG(v.wheelSpeedFront, p) },
+  rodaT: { name: 'Roda traseira', ch: ['wheelSpeedRear'], make: (v, p) => speedG(v.wheelSpeedRear, p) },
+  ic: { name: 'Temperatura do intercooler', ch: ['compressorDischargeTemp'], make: (v, p) => tempG(v.compressorDischargeTemp, p, 0, 150) },
 };
 const ALL_CH = [...new Set(['RPMValue', 'alertActiveMask', 'shiftLightTarget', 'shiftLightOn', ...Object.values(GAUGES).flatMap((g) => g.ch)])];
 

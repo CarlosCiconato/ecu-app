@@ -176,6 +176,15 @@ export class EcuSession extends EventEmitter {
     this.setStatus({ state: 'conectado', offline: nome, demo: false, ecuSignature: m.assinatura, signatureMatch: true, progress: 1, dirty: false, undo: 0,
       message: `Mapa aberto sem ECU: ${nome}. Salvar grava no arquivo.`, rev: ++this.rev });
   }
+  /** Mapa novo sem ECU (para o assistente de mapa padrão): parte do mapa base do nosso firmware e grava no arquivo. */
+  newOffline(filePath: string) {
+    this.usarIniPadrao();
+    const nome = path.basename(filePath).replace(/\.ecumap$/i, '');
+    const m = { formato: 'ecu-mapa', versao: 1, nome, assinatura: this.ini.signature, criado: new Date().toISOString(),
+      pagina1: Buffer.from(demoPage(this.ini)).toString('base64') };
+    fs.writeFileSync(filePath, JSON.stringify(m, null, 1));
+    this.openOffline(m, filePath);
+  }
   status: EcuStatus;
 
   private iniPadrao: Ini; // .ini do nosso firmware (demonstração e mapas sem ECU)

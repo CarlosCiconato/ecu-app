@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { call, useStatus } from '../api';
 import { fmt } from '../format';
+import { engineVolOut, engineVolUnit, flowOut, flowUnit, usePrefs } from '../prefs';
 import type { Screen } from '../App';
 
 const COMB = ['Gasolina', 'Gasolina de competição', 'Etanol', 'Metanol'];
@@ -35,8 +36,31 @@ function Numero({ titulo, v, unit, passo, set, min, max }: { titulo: string; v: 
   );
 }
 
+/** Sem ECU: cria um mapa novo no computador (arquivo .ecumap) e o assistente trabalha nele. */
+function SemEcu() {
+  const [nome, setNome] = useState('Mapa novo');
+  const [msg, setMsg] = useState<string>();
+  return (
+    <main className="screen" style={{ gap: 14, paddingTop: 10, maxWidth: 720 }}>
+      <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <b style={{ fontSize: 18 }}>Gerar mapa padrão sem ECU</b>
+        <span style={{ fontSize: 14, color: 'var(--muted)' }}>Sem ECU conectada, o mapa é criado no computador (pasta ECU Arquivos/Mapas).
+          Depois é só ajustar os dados do motor, gerar e salvar. Quando ligar na ECU, abra o mapa e grave nela.</span>
+        <label style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <span className="label">Nome do mapa</span>
+          <input value={nome} onChange={(e) => setNome(e.target.value)} style={{ flexGrow: 1, height: 40, fontSize: 16 }} />
+        </label>
+        <button className="btn primary" style={{ height: 52, fontSize: 17 }} disabled={!nome.trim()}
+          onClick={() => call<string>('mapNew', { name: nome.trim() }).then(() => setMsg(undefined), (e) => setMsg((e as Error).message))}>Criar mapa novo e continuar</button>
+        {msg && <div className="notice err">{msg}</div>}
+      </div>
+    </main>
+  );
+}
+
 export function MapaPadrao({ go }: { go: (s: Screen) => void }) {
   const s = useStatus();
+  const un = usePrefs();
   const [c, setC] = useState<Record<string, number | null>>();
   const [rpmMax, setRpmMax] = useState(8000);
   const [mapMax, setMapMax] = useState(250);
@@ -52,7 +76,7 @@ export function MapaPadrao({ go }: { go: (s: Screen) => void }) {
     call<Record<string, number | null>>('constants', { names: ['cylindersCount', 'displacement', 'injector_flow', 'injTimeUseTps'] }).then(setC, (e) => setMsg(e.message));
   }, [s.state]);
 
-  if (s.state !== 'conectado') return <main className="screen"><div className="notice err">Conecte na ECU para gerar o mapa padrão.</div></main>;
+  if (s.state !== 'conectado') return <SemEcu />;
   if (!c) return <main className="screen"><span className="label">Lendo…</span></main>;
   const tps = c.injTimeUseTps === 1;
 
@@ -70,8 +94,8 @@ export function MapaPadrao({ go }: { go: (s: Screen) => void }) {
   return (
     <main className="screen" style={{ gap: 12, paddingTop: 10 }}>
       <div className="card" style={{ padding: '10px 16px', display: 'flex', gap: 24, fontSize: 15, alignItems: 'center' }}>
-        <span>Motor: <b>{c.cylindersCount} cilindros</b>, <b>{fmt(c.displacement ?? 0, 2)} L</b></span>
-        <span>Bicos: <b>{fmt(c.injector_flow ?? 0, 0)} cc/min</b> cada</span>
+        <span>Motor: <b>{c.cylindersCount} cilindros</b>, <b>{fmt(engineVolOut(c.displacement ?? 0, un.engineVol), un.engineVol === 'L' ? 2 : 0)} {engineVolUnit(un.engineVol)}</b></span>
+        <span>Bicos: <b>{fmt(flowOut(c.injector_flow ?? 0, un.injFlow), un.injFlow === 'ccmin' ? 0 : 1)} {flowUnit(un.injFlow)}</b> cada</span>
         <span>Mapa por <b>{tps ? 'TPS' : 'MAP'}</b></span>
         <span style={{ flexGrow: 1 }} />
         <button className="btn" style={{ height: 40 }} onClick={() => go('motor')}>Mudar na Configuração do motor</button>
@@ -93,7 +117,7 @@ export function MapaPadrao({ go }: { go: (s: Screen) => void }) {
           ? <><button className="btn" style={{ height: 52 }} onClick={() => setConfirma(false)}>Cancelar</button>
             <button className="btn primary" style={{ height: 52, width: 200, fontSize: 17 }} disabled={busy} onClick={gerar}>Sim, gerar</button></>
           : <button className="btn" style={{ height: 52, width: 200, fontSize: 17 }} disabled={busy} onClick={() => { setMsg(undefined); setConfirma(true); }}>Gerar mapa padrão</button>}
-        <button className="btn primary" style={{ height: 52, width: 180, fontSize: 17 }} disabled={busy || !s.dirty} onClick={async () => { setBusy(true); try { await call('burn'); setMsg('Gravado na ECU.'); } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); } }}>Gravar na ECU</button>
+        <button className="btn primary" style={{ height: 52, width: 180, fontSize: 17 }} disabled={busy || !s.dirty} onClick={async () => { setBusy(true); try { await call('burn'); setMsg(s.offline ? 'Gravado no arquivo do mapa.' : 'Gravado na ECU.'); } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); } }}>{s.offline ? 'Salvar no arquivo' : 'Gravar na ECU'}</button>
       </div>
     </main>
   );

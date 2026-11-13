@@ -227,3 +227,12 @@ input.field { height: 52px; border-radius: 10px; border: 1px solid var(--line); 
 
 /* Modo painel no carro: só toque, sem ponteiro do mouse */
 .sem-cursor, .sem-cursor * { cursor: none !important; }
+
+/* Unidades de medida: grupos com bolinhas, em colunas */
+.un-tela { flex-direction: row; gap: 10px; padding-top: 10px; align-items: flex-start; overflow: auto; flex-wrap: wrap; }
+.un-col { flex: 1 1 200px; min-width: 200px; display: flex; flex-direction: column; gap: 10px; }
+.un-grupo { margin: 0; border: 1px solid var(--line, #3a3e46); border-radius: 8px; background: var(--panel, #24272d); padding: 8px 12px 10px; display: flex; flex-direction: column; gap: 2px; }
+.un-grupo legend { padding: 0 4px; font-weight: 600; font-size: 15px; }
+.un-grupo label { display: flex; align-items: center; gap: 10px; min-height: 34px; font-size: 14px; color: var(--muted); cursor: pointer; }
+.un-grupo label.on { color: var(--text); }
+.un-grupo input { width: 20px; height: 20px; accent-color: var(--green); flex-shrink: 0; margin: 0; }
