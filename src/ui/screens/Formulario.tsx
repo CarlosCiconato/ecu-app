@@ -33,6 +33,7 @@ export function Formulario({ sections, extra }: { sections: SecaoDef[]; extra?: 
   const [vals, setVals] = useState<Record<string, Val>>();
   const [opts, setOpts] = useState<Record<string, string[]>>({});
   const [picking, setPicking] = useState<CampoDef>();
+  const [ajuda, setAjuda] = useState<{ titulo: string; texto?: string }>();
   const [everyOpt, setEveryOpt] = useState(false);
   const [uso, setUso] = useState<Record<string, Val>>({});
   const [usoOpts, setUsoOpts] = useState<Record<string, string[]>>({}); // valor de todos os campos de pino (para mostrar o que já está em uso)
@@ -111,13 +112,13 @@ export function Formulario({ sections, extra }: { sections: SecaoDef[]; extra?: 
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <span className="label">{f.label}</span>
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${f.only.length}, minmax(0, 1fr))`, gap: 6 }}>
+          <div className="fm-opcoes" style={{ display: 'grid', gridTemplateColumns: `repeat(${f.only.length}, minmax(0, 1fr))`, gap: 6 }}>
             {f.only.map((i) => (
               <button key={i} className="btn" disabled={busy} onClick={() => set(f.name, i)}
                 style={{ height: 44, fontSize: 14, borderWidth: 2, borderColor: v === i ? 'var(--amber)' : undefined, color: v === i ? 'var(--text)' : 'var(--muted)' }}>{f.labels![i]}</button>
             ))}
           </div>
-          {f.hint && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{f.hint}</span>}
+          {f.hint && <span className="fm-dica" style={{ fontSize: 12, color: 'var(--muted)' }}>{f.hint}</span>}
         </div>
       );
     }
@@ -128,7 +129,7 @@ export function Formulario({ sections, extra }: { sections: SecaoDef[]; extra?: 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <span className="label">{f.label}</span>
           {options.length <= 4 && !isPinList(list) ? (
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`, gap: 6 }}>
+            <div className="fm-opcoes" style={{ display: 'grid', gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`, gap: 6 }}>
               {options.map(([i, t]) => (
                 <button key={i} className="btn" disabled={busy} onClick={() => set(f.name, i)}
                   style={{ height: 44, fontSize: 14, borderWidth: 2, borderColor: v === i ? 'var(--amber)' : undefined, color: v === i ? 'var(--text)' : 'var(--muted)' }}>{t}</button>
@@ -139,7 +140,7 @@ export function Formulario({ sections, extra }: { sections: SecaoDef[]; extra?: 
               <span>{current}</span><span style={{ color: 'var(--muted)' }}>Trocar ›</span>
             </button>
           )}
-          {f.hint && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{f.hint}</span>}
+          {f.hint && <span className="fm-dica" style={{ fontSize: 12, color: 'var(--muted)' }}>{f.hint}</span>}
         </div>
       );
     }
@@ -149,7 +150,7 @@ export function Formulario({ sections, extra }: { sections: SecaoDef[]; extra?: 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <span className="label">{f.label}</span>
-        <div style={{ display: 'grid', gridTemplateColumns: '50px 44px 1fr 44px 50px', gap: 6, alignItems: 'center' }}>
+        <div className="fm-num" style={{ display: 'grid', gridTemplateColumns: '50px 44px 1fr 44px 50px', gap: 6, alignItems: 'center' }}>
           <button className="btn" style={{ height: 44, fontSize: 13 }} disabled={busy} onClick={() => set(f.name, v - big)}>−{fmt(big, big < 1 ? 1 : 0)}</button>
           <button className="btn" style={{ height: 44 }} disabled={busy} onClick={() => set(f.name, v - step)}>−</button>
           <span className="num" style={{ fontSize: 26, textAlign: 'center' }}>{fmt(v, digits)} <span style={{ fontSize: 14, color: 'var(--muted)' }}>{f.unit ?? ''}</span></span>
@@ -163,7 +164,7 @@ export function Formulario({ sections, extra }: { sections: SecaoDef[]; extra?: 
           </div>
         )}
         {f.warn?.(vals!) && <span style={{ fontSize: 13, color: 'var(--red)', fontWeight: 600 }}>{f.warn(vals!)}</span>}
-        {f.hint && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{f.hint}</span>}
+        {f.hint && <span className="fm-dica" style={{ fontSize: 12, color: 'var(--muted)' }}>{f.hint}</span>}
       </div>
     );
   }
@@ -199,10 +200,11 @@ export function Formulario({ sections, extra }: { sections: SecaoDef[]; extra?: 
           )}
         </section>
       ) : (
-        <section style={{ flexGrow: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, alignContent: 'start', minHeight: 0 }}>
+        <div className="fm-corpo">
+        <section className="fm-secoes" style={{ flexGrow: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, alignContent: 'start', minHeight: 0 }}>
           {sections.filter((sec) => sec.fields.some((f) => !f.showIf || f.showIf(vals!))).map((sec) => (
-            <div key={sec.title} className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <span className="num" style={{ fontSize: 20, color: 'var(--amber)' }}>{sec.title}</span>
+            <div key={sec.title} className="card fm-secao" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <span className="num fm-titulo" style={{ fontSize: 20, color: 'var(--amber)' }}>{sec.title}</span>
               {sec.presets && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                   <span style={{ fontSize: 13, color: 'var(--muted)' }}>{sec.presetsLabel ?? 'Sensor pronto:'}</span>
@@ -212,10 +214,20 @@ export function Formulario({ sections, extra }: { sections: SecaoDef[]; extra?: 
                   ))}
                 </div>
               )}
-              {sec.fields.map((f) => <div key={f.name} style={{ display: "contents" }}>{Campo({ f })}</div>)}
+              {sec.fields.map((f) => <div key={f.name} className="fm-campo" onMouseEnter={() => setAjuda({ titulo: f.label, texto: f.hint })} onFocusCapture={() => setAjuda({ titulo: f.label, texto: f.hint })}>{Campo({ f })}</div>)}
             </div>
           ))}
         </section>
+        <aside className="fm-ajuda">
+          <b>Ajuda</b>
+          {ajuda ? <>
+            <span className="fm-ajuda-campo">{ajuda.titulo}</span>
+            <span>{ajuda.texto ?? 'Sem explicação extra para este campo.'}</span>
+          </> : <span>Passe o mouse sobre um campo para ver a explicação dele aqui.</span>}
+          {!ajuda && sections.flatMap((sec) => sec.fields.filter((f) => f.hint && (!f.showIf || f.showIf(vals!))).map((f) => (
+            <span key={f.name}><b className="fm-ajuda-campo">{f.label}:</b> {f.hint}</span>)))}
+        </aside>
+        </div>
       )}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         {msg ? <div className={`notice ${msg.startsWith('Gravado') ? 'ok' : 'err'}`} style={{ flexGrow: 1 }}>{msg}</div>

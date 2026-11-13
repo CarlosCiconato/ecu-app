@@ -1,6 +1,6 @@
 {
   "name": "ecu-app",
-  "version": "0.36.0",
+  "version": "0.37.0",
   "private": true,
   "type": "module",
   "description": "Programa de ajuste da nossa ECU, rusEFI e Speeduino, estilo profissional",

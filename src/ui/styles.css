@@ -244,3 +244,28 @@ input.field { height: 52px; border-radius: 10px; border: 1px solid var(--line); 
 .cv-cel { height: 38px; border: none; border-right: 1px solid rgba(0,0,0,.35); color: #fff; font-weight: 700; font-size: 15px; padding: 0; cursor: pointer; text-shadow: 0 1px 2px rgba(0,0,0,.7); }
 .cv-cel.sel { outline: 3px solid var(--amber); outline-offset: -3px; }
 .cv-cel input { width: 90%; font-size: 15px; text-align: center; }
+
+/* Diagrama de sincronismo */
+.sinc-resumo { padding: 8px 14px; display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; color: var(--muted); }
+.sinc-resumo b { color: var(--text); }
+
+/* Formulários: no celular/tela do carro ficam como estão; no computador viram blocos compactos em colunas
+   (estilo dos programas profissionais) com a ajuda do lado direito. */
+.fm-corpo { flex-grow: 1; display: flex; gap: 10px; min-height: 0; }
+.fm-ajuda { display: none; }
+.dk .fm-ajuda { display: flex; flex-direction: column; gap: 10px; width: 260px; flex-shrink: 0; overflow-y: auto; padding: 12px 14px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.dk .fm-ajuda > b { color: var(--text); font-size: 15px; }
+.fm-ajuda-campo { color: var(--text); font-weight: 600; }
+.dk .fm-secoes { display: block !important; columns: 280px; column-gap: 10px; }
+.dk .fm-secao { break-inside: avoid; margin-bottom: 10px; padding: 10px 12px !important; gap: 8px !important; display: inline-flex !important; width: 100%; }
+.dk .fm-titulo { font-size: 15px !important; }
+.dk .fm-dica { display: none; }
+.dk .fm-campo .label { font-size: 13px; }
+.dk .fm-campo .btn { height: 34px !important; font-size: 13px !important; min-height: 0 !important; }
+.dk .fm-campo:empty { display: none; }
+.dk .fm-num { grid-template-columns: 32px 1fr 32px !important; gap: 0 !important; background: #0b0c0e; border: 1px solid var(--line); border-radius: 6px; }
+.dk .fm-num > .btn:first-child, .dk .fm-num > .btn:last-child { display: none; }
+.dk .fm-num > .btn { border: none !important; background: transparent !important; height: 32px !important; }
+.dk .fm-num > .num { font-size: 18px !important; white-space: nowrap; }
+.dk .fm-campo:hover .label { color: var(--amber); }

@@ -5,7 +5,7 @@ import { fmt } from '../format';
 import { distOut, distUnit, setPrefs, usePrefs, type FluxoUn, type Prefs } from '../prefs';
 import type { Screen } from '../App';
 import { GAUGES, NOMES_PAINEL, PAINEIS_PADRAO, SLOTS, zerarPicos } from './Painel';
-export const APP_VERSION = '0.36';
+export const APP_VERSION = '0.37';
 
 function Choice<K extends keyof Prefs>({ label, k, options }: { label: string; k: K; options: [Prefs[K], string][] }) {
   const p = usePrefs();

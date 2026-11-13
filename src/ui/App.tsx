@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Sincronismo } from './screens/Sincronismo';
 import { useLive, useStatus } from './api';
 import { fmt } from './format';
 import { pressDigits, pressure, tempOut, tempUnit, usePrefs } from './prefs';
@@ -33,9 +34,9 @@ export const isDesktop = new URLSearchParams(location.search).has('desktop');
 export const isPainel = new URLSearchParams(location.search).has('painel');
 if (new URLSearchParams(location.search).has('semcursor')) document.documentElement.classList.add('sem-cursor');
 
-export type Screen = 'conexao' | 'menu' | 'painel' | 'mapa' | 'ignicao' | 'alertas' | 'ajustes' | 'motor' | 'outras' | 'sensores' | 'diagnostico' | 'favoritos' | 'interface' | 'telaSom' | 'painelCfg' | 'versao' | 'menuInjecao' | 'menuIgnicao' | 'menuOutras' | 'turbo' | 'senhas' | 'menuInterface' | 'ftm' | 'mapaPadrao' | 'ltft' | 'testes' | 'sinalRpm' | 'inicio' | 'datalogger' | 'tema' | 'tabelasEcu' | `menu${string}` | `c_${string}` | `t_${string}` | `f_${string}` | `d_${string}` | `k_${string}`;
+export type Screen = 'conexao' | 'menu' | 'painel' | 'mapa' | 'ignicao' | 'alertas' | 'ajustes' | 'motor' | 'outras' | 'sensores' | 'diagnostico' | 'favoritos' | 'interface' | 'telaSom' | 'painelCfg' | 'versao' | 'menuInjecao' | 'menuIgnicao' | 'menuOutras' | 'turbo' | 'senhas' | 'menuInterface' | 'ftm' | 'mapaPadrao' | 'ltft' | 'testes' | 'sinalRpm' | 'sincronismo' | 'inicio' | 'datalogger' | 'tema' | 'tabelasEcu' | `menu${string}` | `c_${string}` | `t_${string}` | `f_${string}` | `d_${string}` | `k_${string}`;
 export const TITLES: Record<string, string> = {
-  conexao: 'Conexão com a ECU', menu: 'Menu principal', painel: 'Painel de instrumentos', mapa: 'Mapa principal de injeção', ignicao: 'Mapa principal de ignição', alertas: 'Alertas', ajustes: 'Gerenciador de ajustes', motor: 'Características do motor', sinalRpm: 'Sinal de RPM', outras: 'Corte de rotação e largada', sensores: 'Sensores e calibração', diagnostico: 'Diagnóstico', favoritos: 'Favoritos', turbo: 'Controle de turbo', senhas: 'Senhas', interface: 'Unidades de medida', telaSom: 'Tela, som e tela inicial', painelCfg: 'Configuração do painel', versao: 'Versões, odômetro e horímetro', ftm: 'Mapas (.ftm)', mapaPadrao: 'Mapa padrão', ltft: 'Correção de longo prazo', tabelasEcu: 'Funções da ECU', testes: 'Teste de saídas', inicio: 'Tela inicial', datalogger: 'Datalogger', tema: 'Tema do programa',
+  conexao: 'Conexão com a ECU', menu: 'Menu principal', painel: 'Painel de instrumentos', mapa: 'Mapa principal de injeção', ignicao: 'Mapa principal de ignição', alertas: 'Alertas', ajustes: 'Gerenciador de ajustes', motor: 'Características do motor', sinalRpm: 'Sinal de RPM', sincronismo: 'Diagrama de sincronismo', outras: 'Corte de rotação e largada', sensores: 'Sensores e calibração', diagnostico: 'Diagnóstico', favoritos: 'Favoritos', turbo: 'Controle de turbo', senhas: 'Senhas', interface: 'Unidades de medida', telaSom: 'Tela, som e tela inicial', painelCfg: 'Configuração do painel', versao: 'Versões, odômetro e horímetro', ftm: 'Mapas (.ftm)', mapaPadrao: 'Mapa padrão', ltft: 'Correção de longo prazo', tabelasEcu: 'Funções da ECU', testes: 'Teste de saídas', inicio: 'Tela inicial', datalogger: 'Datalogger', tema: 'Tema do programa',
 };
 
 function useFit() {
@@ -129,6 +130,7 @@ export function ScreenView({ screen, go: setScreen }: { screen: Screen; go: (s: 
       {screen === 'mapaPadrao' && <MapaPadrao go={setScreen} />}
       {screen === 'motor' && <ConfigMotor />}
       {screen === 'sinalRpm' && <SinalRpm />}
+      {screen === 'sincronismo' && <Sincronismo />}
       {screen === 'outras' && <OutrasFuncoes />}
       {screen === 'diagnostico' && <Diagnostico />}
       {screen === 'favoritos' && <Favoritos go={setScreen} />}

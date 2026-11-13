@@ -24,7 +24,7 @@ const alsOn = (f: CampoDef): CampoDef => ({ ...f, showIf: (v) => v.antiLagEnable
 const nCil = (vals: Record<string, unknown>) => Number(vals.cylindersCount ?? 4);
 // Ordem de ignição: só as que têm o mesmo número de cilindros do motor.
 const ORDEM_CUSTOM = 37; // item 60 do firmware: "Custom (type it)"
-const pickOrdem = (label: string, vals: Record<string, unknown>) => label.startsWith('Custom') || label.split(' ')[0].split('-').length === nCil(vals) || (label === 'One Cylinder' && nCil(vals) === 1);
+const pickOrdem = (label: string, vals: Record<string, unknown>) => label.startsWith('Custom') || label.split(' ')[0].split(/[-_]/).length === nCil(vals) || (label === 'One Cylinder' && nCil(vals) === 1);
 /** Ordem personalizada: posição 1..N → cilindro. Avisa cilindro repetido ou fora de 1..N (o firmware cai para 1-2-3… e dá o aviso 6024). */
 const ORDEM_FIELDS: CampoDef[] = Array.from({ length: 12 }, (_, k) => ({
   name: `customFiringOrder${k + 1}`, label: `${k + 1}º a disparar: cilindro`, step: 1, big: 1,

@@ -13,7 +13,7 @@ const SEMPRE = new Set<string>(['inicio', 'conexao', 'menu', 'painel', 'datalogg
 /** Telas especiais e o campo que precisam existir. */
 const ESPECIAIS: Record<string, string> = {
   mapa: 'injTimeTableTbl', ignicao: 'ignitionTableTbl', ltft: 'ltftBank1InjTimeTbl', alertas: 'alertSensor1', senhas: 'pinUser',
-  motor: 'firingOrder', sinalRpm: 'trigger_type', outras: 'rpmHardLimit', turbo: 'isBoostControlEnabled', testes: 'cmd_test_inj1',
+  motor: 'firingOrder', sinalRpm: 'trigger_type', sincronismo: 'trigger_type', outras: 'rpmHardLimit', turbo: 'isBoostControlEnabled', testes: 'cmd_test_inj1',
   diagnostico: 'totalTriggerErrorCounter', ajustes: 'injTimeTable', ftm: 'injTimeTable', mapaPadrao: 'injTimeTable', tabelasEcu: '__speeduino',
 };
 

@@ -718,9 +718,17 @@ export class EcuSession extends EventEmitter {
     }
     if (name === 'cylindersCount' && fo?.kind === 'bits') {
       const cur = ordemCilindros(fo.options[Number(this.constant('firingOrder'))]);
-      if (cur !== undefined && cur !== Math.round(v)) {
-        const novo = fo.options.findIndex((o) => ordemCilindros(o) === Math.round(v));
-        if (novo < 0) throw new Error(`Não há ordem de ignição pronta para ${v} cilindros.`);
+      if (cur !== Math.round(v)) {
+        let novo = fo.options.findIndex((o) => ordemCilindros(o) === Math.round(v));
+        if (novo < 0) {
+          // sem ordem pronta (ex.: 7, 11 cilindros): usa a ordem personalizada 1-2-3… (dá para mudar na tela)
+          novo = fo.options.findIndex((o) => /^Custom/i.test(o));
+          if (novo < 0) throw new Error(`Não há ordem de ignição pronta para ${v} cilindros.`);
+          for (let k = 1; k <= Math.round(v); k++) {
+            const c = this.ini.constants.get(`customFiringOrder${k}`);
+            if (c?.kind === 'scalar' && c.page === 1) { const [a, b] = encodeScalar(this.page1, c, k); await this.send(a, b); }
+          }
+        }
         extra = encodeBits(this.page1, fo, novo);
       }
     }

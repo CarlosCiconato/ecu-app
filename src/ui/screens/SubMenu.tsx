@@ -78,6 +78,7 @@ export const SUBMENUS: Record<string, { title: string; items: Item[] }> = {
     form('bicos', 'Vazão, modo, momento da injeção'), tabela('deadTime', 'Bateria × pressão'),
     form('atuadorLenta', 'Válvula PWM, motor de passo ou borboleta'),
     form('saidas', 'Em qual pino da placa liga cada bico, bobina, relé e botão'),
+    { label: 'Diagrama de sincronismo', sub: 'Roda, fase, PMS, tempos, ignição e injeção desenhados', go: 'sincronismo' },
   ] },
   // Ordem do manual de referência, cap. 15. Cada sensor escolhe o fio de entrada na própria tela.
   menuSensores: { title: 'Sensores e calibração', items: [
