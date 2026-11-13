@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { call, useStatus } from '../api';
-import { stateColor } from '../App';
+import { isPainel, stateColor } from '../App';
 
 const STATE_TEXT: Record<string, string> = {
   desconectado: 'Desconectado', conectando: 'Conectando…', lendo: 'Lendo a configuração da ECU…',
@@ -37,7 +37,7 @@ export function EscolherIni() {
 
 export function Conexao() {
   const s = useStatus();
-  const [mode, setMode] = useState<'demo' | 'sim' | 'usb'>('demo');
+  const [mode, setMode] = useState<'demo' | 'sim' | 'usb' | 'wifi'>(isPainel ? 'wifi' : 'demo');
   const [host, setHost] = useState('127.0.0.1');
   const [port, setPort] = useState('29001');
   const [ports, setPorts] = useState<{ path: string; label: string }[]>([]);
@@ -59,11 +59,11 @@ export function Conexao() {
     <main className="screen" style={{ flexDirection: 'row', gap: 16 }}>
       <section className="card" style={{ flex: 1, padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <span className="label">Como ligar na ECU</span>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-          {([['demo', 'Demonstração', 'ECU falsa dentro do app, para ver as telas'], ['sim', 'Simulador (rede)', 'ECU de teste rodando no computador'], ['usb', 'Cabo USB', 'Nossa placa, rusEFI ou Speeduino']] as const).map(([k, t, d]) => (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          {([['wifi', 'Wi-Fi da ECU', 'Sem fio: rede "ECU-…" da nossa placa'], ['usb', 'Cabo USB', 'Nossa placa, rusEFI ou Speeduino'], ['sim', 'Simulador (rede)', 'ECU de teste em outro computador'], ['demo', 'Demonstração', 'ECU falsa dentro do app']] as const).map(([k, t, d]) => (
             <button key={k} className="card" onClick={() => setMode(k)}
-              style={{ padding: 16, textAlign: 'left', cursor: 'pointer', borderColor: mode === k ? 'var(--amber)' : undefined, borderWidth: 2}}>
-              <div className="num" style={{ fontSize: 24 }}>{t}</div>
+              style={{ padding: '12px 14px', textAlign: 'left', cursor: 'pointer', borderColor: mode === k ? 'var(--amber)' : undefined, borderWidth: 2}}>
+              <div className="num" style={{ fontSize: 22 }}>{t}</div>
               <div style={{ color: 'var(--muted)', fontSize: 14, marginTop: 6 }}>{d}</div>
             </button>
           ))}
@@ -99,6 +99,10 @@ export function Conexao() {
           Nenhuma porta USB apareceu. Confira: o cabo é de dados (não só de carga); o Arduino IDE e o TunerStudio estão fechados;
           Arduino Mega paralelo (chip CH340) precisa do driver CH340 no Windows e em Mac antigo. Se o Arduino IDE enxerga a porta, digite o nome dela acima.
         </div>}
+        {mode === 'wifi' && <div className="notice ok">
+          Ligue este aparelho na rede Wi-Fi da ECU (nome "ECU-…", senha na etiqueta da placa) e toque em Conectar. Endereço 192.168.4.1, porta 29001.
+          {isPainel && ' No modo painel a tela liga sozinha quando a ECU aparece.'}
+        </div>}
         {mode === 'demo' && <div className="notice ok">Os sensores andam sozinhos (lenta, acelerada, puxada até o corte). Você pode editar e gravar o mapa; a gravação fica guardada até fechar o app.</div>}
         <span style={{ flexGrow: 1 }} />
         {connected || busy ? (
@@ -106,7 +110,7 @@ export function Conexao() {
         ) : (
           <button className="btn primary" style={{ height: 60, fontSize: 19 }}
             disabled={!s.bridgeUp || (mode === 'usb' && !serial)}
-            onClick={() => (mode === 'demo' ? call('demo') : mode === 'usb' ? call('connectSerial', { path: serial }) : call('connect', { host, port: Number(port) }))}>Conectar</button>
+            onClick={() => (mode === 'demo' ? call('demo') : mode === 'usb' ? call('connectSerial', { path: serial }) : mode === 'wifi' ? call('connect', { host: '192.168.4.1', port: 29001 }) : call('connect', { host, port: Number(port) }))}>Conectar</button>
         )}
       </section>
 

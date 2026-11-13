@@ -29,6 +29,9 @@ import { Tema, aplicarTema } from './screens/Tema';
 
 /** No Mac/PC (janela do app) usa o layout de computador, no estilo dos programas profissionais. */
 export const isDesktop = new URLSearchParams(location.search).has('desktop');
+/** Modo painel: tela de 7" no carro (Raspberry Pi), tela cheia por toque, liga sozinho na ECU. */
+export const isPainel = new URLSearchParams(location.search).has('painel');
+if (new URLSearchParams(location.search).has('semcursor')) document.documentElement.classList.add('sem-cursor');
 
 export type Screen = 'conexao' | 'menu' | 'painel' | 'mapa' | 'ignicao' | 'alertas' | 'ajustes' | 'motor' | 'outras' | 'sensores' | 'diagnostico' | 'favoritos' | 'interface' | 'telaSom' | 'painelCfg' | 'versao' | 'menuInjecao' | 'menuIgnicao' | 'menuOutras' | 'turbo' | 'senhas' | 'menuInterface' | 'ftm' | 'mapaPadrao' | 'ltft' | 'testes' | 'sinalRpm' | 'inicio' | 'datalogger' | 'tema' | 'tabelasEcu' | `menu${string}` | `c_${string}` | `t_${string}` | `f_${string}` | `d_${string}` | `k_${string}`;
 export const TITLES: Record<string, string> = {

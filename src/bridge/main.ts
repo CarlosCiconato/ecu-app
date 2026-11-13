@@ -21,6 +21,17 @@ const userDir = process.env.ECU_FILES ?? path.join(os.homedir(), 'Documents', 'E
 const iniCache = path.join(userDir, 'ini');
 const ecu = new EcuSession(ini, { app: path.dirname(iniPath), cache: iniCache });
 console.log(`[ponte] .ini: ${path.basename(iniPath)} · assinatura ${ini.signature}`);
+// Modo painel (tela no carro): lembra a última conexão e liga sozinho na ECU quando ela aparece no cabo.
+const painel = process.env.ECU_PAINEL === '1';
+const WIFI_ECU = '192.168.4.1'; // endereço do ESP32 da placa no modo ponto de acesso
+const ultimaArq = path.join(userDir, 'ultima-conexao.json');
+type Ultima = { tipo: 'serial'; path: string } | { tipo: 'rede'; host: string; port: number };
+let pausaAuto = false; // o usuário desligou (ou abriu a demonstração): não religa sozinho
+function lembrar(u: Ultima) {
+  pausaAuto = false;
+  try { fs.mkdirSync(userDir, { recursive: true }); fs.writeFileSync(ultimaArq, JSON.stringify(u)); } catch { /* sem disco: só não lembra */ }
+}
+function ultima(): Ultima | undefined { try { return JSON.parse(fs.readFileSync(ultimaArq, 'utf8')); } catch { return undefined; } }
 const KINDS: Record<string, string> = { mapas: 'Mapas', logs: 'Logs' };
 function kindDir(kind: string) {
   const d = path.join(userDir, KINDS[kind] ?? 'Outros');
@@ -78,6 +89,7 @@ wss.on('connection', (ws) => {
       switch (msg.op) {
         case 'connect':
           reply(true);
+          lembrar({ tipo: 'rede', host: String(msg.host ?? '127.0.0.1'), port: Number(msg.port ?? 29001) });
           await ecu.connect(String(msg.host ?? '127.0.0.1'), Number(msg.port ?? 29001));
           break;
         case 'mapSave': {
@@ -113,6 +125,7 @@ wss.on('connection', (ws) => {
         case 'serialPorts': reply(await listSerialPorts()); break;
         case 'connectSerial':
           reply(true);
+          lembrar({ tipo: 'serial', path: String(msg.path) });
           await ecu.connectSerial(String(msg.path));
           break;
         case 'iniArquivo': {
@@ -124,8 +137,10 @@ wss.on('connection', (ws) => {
           await ecu.reconnect();
           break;
         }
-        case 'demo': ecu.connectDemo(); reply(true); break;
-        case 'disconnect': ecu.disconnect(); reply(true); break;
+        case 'demo': pausaAuto = true; ecu.connectDemo(); reply(true); break;
+        case 'disconnect': pausaAuto = true; ecu.disconnect(); reply(true); break;
+        case 'modo': reply({ painel, auto: painel && !pausaAuto, wifi: WIFI_ECU }); break;
+        case 'autoLigar': pausaAuto = false; reply(true); void autoLigar(); break;
         case 'subscribe': subs.set(ws, (msg.names as string[]) ?? []); reply(true); break;
         case 'table': reply(ecu.table(String(msg.name))); break;
         case 'existe': reply(ecu.existe((msg.names as string[]) ?? [])); break;
@@ -164,6 +179,24 @@ wss.on('connection', (ws) => {
 
 export const ready = new Promise<number>((ok) => server.once('listening', () => ok((server.address() as { port: number }).port)));
 server.listen(port, process.env.HOST ?? '127.0.0.1', () => console.log(`[ponte] abra http://localhost:${port}`));
+/** Modo painel: procura a ECU no cabo USB a cada 4 s enquanto não estiver ligada (a ECU só aparece quando liga a chave). */
+let procurando = false;
+async function autoLigar() {
+  const st = ecu.status.state;
+  if (!painel || pausaAuto || procurando || ecu.status.faltaIni || st === 'conectado' || st === 'conectando' || st === 'lendo') return;
+  procurando = true;
+  try {
+    // 1º a última conexão; sem ela, a ECU pelo Wi-Fi (o ESP32 da placa cria a rede "ECU-…" no endereço 192.168.4.1);
+    // um cabo USB ligado também serve (bancada).
+    const u = ultima() ?? { tipo: 'rede', host: WIFI_ECU, port: 29001 };
+    const portas = await listSerialPorts().catch(() => []);
+    const cabo = portas.find((p) => u.tipo === 'serial' && p.path === u.path)
+      ?? portas.find((p) => /ttyACM|usbmodem|rusefi|stm|arduino|ch34|ftdi|ttyUSB/i.test(`${p.path} ${p.label}`));
+    if (cabo) await ecu.connectSerial(cabo.path);
+    else if (u.tipo === 'rede') await ecu.connect(u.host, u.port);
+  } finally { procurando = false; }
+}
+if (painel && !process.env.DEMO) { setInterval(() => void autoLigar(), 4000); void autoLigar(); }
 if (process.env.DEMO) ecu.connectDemo();
 else if (process.env.AUTO_CONNECT) {
   const [h, p] = process.env.AUTO_CONNECT.split(':');

@@ -28,9 +28,13 @@ const PW_CMDS: Record<string, number> = {
 export function tcpTransport(host: string, port: number): Promise<Transport> {
   return new Promise((resolve, reject) => {
     const sock = net.connect({ host, port });
-    const onErr = (e: Error) => reject(e);
+    const onErr = (e: NodeJS.ErrnoException) => reject(/ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|ETIMEDOUT/.test(e.code ?? '')
+      ? new Error(`A ECU não respondeu em ${host}:${port}. Confira se ela está ligada e se este aparelho está na rede certa (Wi-Fi da ECU: "ECU-…").`) : e);
     sock.once('error', onErr);
+    // Pelo Wi-Fi, ECU desligada = endereço que não responde: desiste em 5 s em vez de esperar o sistema (~2 min).
+    const espera = setTimeout(() => { sock.destroy(); reject(new Error(`A ECU não respondeu em ${host}:${port}. Confira se ela está ligada e se esta tela está na rede Wi-Fi da ECU.`)); }, 5000);
     sock.once('connect', () => {
+      clearTimeout(espera);
       sock.off('error', onErr);
       sock.setNoDelay(true);
       resolve({

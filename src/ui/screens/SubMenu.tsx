@@ -91,6 +91,8 @@ export const SUBMENUS: Record<string, { title: string; items: Item[] }> = {
   menuDiag: { title: 'Diagnóstico', items: [
     { label: 'Sensores e contadores', sub: 'Tensões, erros, cartão SD', go: 'diagnostico' },
     { label: 'Teste de saídas', sub: 'Bicos, bobinas, relés', go: 'testes' },
+    { label: 'Datalogger', sub: 'Gravar e ver logs', go: 'datalogger' },
+    { label: 'Mapas e logs salvos', sub: 'Abrir, salvar e apagar arquivos', go: 'inicio' },
   ] },
 };
 
