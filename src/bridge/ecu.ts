@@ -1003,7 +1003,12 @@ export class EcuSession extends EventEmitter {
       fs.writeFileSync(this.offlinePath, JSON.stringify(this.exportMap(nome), null, 1));
     } else if (this.demo && this.page1) this.demoSaved = this.page1.slice();
     else if (!this.client) throw new Error('sem conexão');
-    else await this.client.burn(this.ini, 1);
+    else {
+      await this.client.burn(this.ini, 1);
+      // A rusEFI responde na hora, mas grava a memória flash logo depois (visto no simulador: desligar em
+      // menos de ~1 s perdia parte da gravação). Segura o "Gravando…" um pouco para ninguém desligar antes.
+      if (this.ini.family === 'rusefi') await new Promise((r) => setTimeout(r, 2000));
+    }
     if (this.page1) this.flash = this.page1.slice();
     this.setStatus({ dirty: false });
   }
