@@ -546,6 +546,14 @@ export class EcuSession extends EventEmitter {
 
   /** Avalia expressões simples do .ini (só nomes, números e operadores). */
   evaluate(expr: string, depth = 0): number | undefined {
+    // arrayValue(array.X, i) da Speeduino: X é uma lista fixa do .ini (defaultValue), ex.: saídas por placa
+    if (expr.includes('arrayValue')) {
+      expr = expr.replace(/arrayValue\(\s*array\.(\w+)\s*,\s*([^()]+)\)/g, (_, n: string, i: string) => {
+        const lista = this.ini.valoresPadrao.get(n);
+        const k = this.evaluate(i.trim(), depth + 1);
+        return String(lista && k !== undefined ? lista[Math.round(k)] ?? 0 : 0);
+      });
+    }
     if (!/^[\w\s.?:()+\-*/<>=!&|]+$/.test(expr)) return undefined;
     const names = [...new Set(expr.match(/[A-Za-z_]\w*/g) ?? [])];
     const vals = names.map((n) => {

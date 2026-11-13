@@ -115,6 +115,10 @@ describe('sessão com Speeduino', () => {
     expect(ecu.comandos).toContain(0x0101);
     await new Promise((r) => setTimeout(r, 400)); // ao vivo atualiza testactive
     expect(s.condicoes([liga.cond!, bico1.cond!])).toEqual([false, true]);
+    // canais 2 a 4 dependem de nFuelChannels = arrayValue(array.boardFuelOutputs, pinLayout)
+    const bico4 = botoes.find((b) => b.cmd === 'cmdtestinj4Pulsed')!;
+    const ign2 = botoes.find((b) => b.cmd === 'cmdtestspk2Pulsed')!;
+    expect(s.condicoes([bico4.cond!, ign2.cond!])).toEqual([true, true]);
     await s.command('cmdtestinj1Pulsed');
     expect(ecu.comandos).toContain(0x0203);
     // calibração: temperatura do motor (sensor GM) e sonda linear

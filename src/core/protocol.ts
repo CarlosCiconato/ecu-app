@@ -237,7 +237,10 @@ export class TsClient {
     for (const pt of partes) {
       for (let i = 0; i < pt.count; i += step) {
         const n = Math.min(step, pt.count - i);
-        const d = await this.read(this.pageCmd(pt.page, 'read', pt.offset + i, n), n);
+        let d = await this.read(this.pageCmd(pt.page, 'read', pt.offset + i, n), n);
+        // resposta curta = pedaço faltando (ficaria zerado na tela): tenta de novo e, se repetir, avisa
+        if (d.length < n) d = await this.read(this.pageCmd(pt.page, 'read', pt.offset + i, n), n);
+        if (d.length < n) throw new Error(`a ECU mandou ${d.length} de ${n} bytes da página ${pt.page.number} (posição ${pt.offset + i})`);
         out.set(d.subarray(0, n), pt.at + i);
         feito += n;
         onProgress?.(feito, count);

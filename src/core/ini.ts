@@ -105,6 +105,7 @@ export interface Ini {
   defines: Map<string, string[]>;
   tables: Map<string, TableDef>;
   calibracoes: Record<string, Calibracao>;
+  valoresPadrao: Map<string, number[]>; // defaultValue = nome, v1 v2 ... (ex.: array.boardFuelOutputs da Speeduino)
   commands: Map<string, number[]>; // botões de ação do .ini (cmd_*), ex.: teste de bico
   comms: IniComms;
   family: 'rusefi' | 'speeduino' | 'outra';
@@ -222,6 +223,7 @@ export function parseIni(text: string, symbols: string[] = DEFAULT_SYMBOLS): Ini
     tables: new Map(),
     commands: new Map(),
     calibracoes: {},
+    valoresPadrao: new Map(),
     comms: { queryCommand: 'S', envelope: false, ochGetCommand: 'O%2o%2c', delayAfterPortOpen: 0, interWriteDelay: 0, blockReadTimeout: 2000, bigEndian: false },
     family: 'outra',
   };
@@ -431,6 +433,10 @@ export function parseIni(text: string, symbols: string[] = DEFAULT_SYMBOLS): Ini
     ini.commands.set(m[1], bytes);
   }
   ini.calibracoes = lerCalibracoes(text);
+  for (const m of text.matchAll(/^\s*defaultValue\s*=\s*(\w+)\s*,\s*(.*)$/gm)) {
+    const v = m[2].replace(/;.*$/, '').trim().split(/[\s,]+/).map(Number);
+    if (v.length && v.every((x) => Number.isFinite(x))) ini.valoresPadrao.set(m[1], v);
+  }
   return ini;
 }
 
