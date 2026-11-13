@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { call, useLive, useStatus } from '../api';
 import { fmt } from '../format';
+import { heat } from './MapaInjecao';
 
 export interface CurvaDef {
   title: string;
@@ -96,6 +97,15 @@ export function Curva({ id }: { id: string }) {
     catch (e) { setMsg((e as Error).message); }
     finally { setBusy(false); }
   }
+  /** Coloca um valor (na unidade mostrada) nos pontos de i0 a i1. */
+  async function definir(i0: number, i1: number, v: number) {
+    const cells = [];
+    for (let i = i0; i <= i1; i++) cells.push({ index: i, value: store(Math.round(v * 1e4) / 1e4) });
+    setBusy(true);
+    try { setYs(await call<number[]>('setArray', { name: def.y, cells })); setMsg(undefined); }
+    catch (e) { setMsg((e as Error).message); }
+    finally { setBusy(false); }
+  }
   async function setToggle(v: number) {
     setBusy(true);
     try { setOn(await call<number>('setValue', { name: def.toggle, value: v })); setMsg(undefined); }
@@ -119,26 +129,8 @@ export function Curva({ id }: { id: string }) {
           ))}
         </div>
         {def.hint && <span style={{ fontSize: 13, color: 'var(--muted)' }}>{def.hint}</span>}
-        <div style={{ flexGrow: 1, display: 'grid', gridTemplateColumns: `repeat(${xs.length}, minmax(0, 1fr))`, gap: 4, alignItems: 'end', minHeight: 0 }}>
-          {shown.map((v, i) => {
-            const h = ((v - lo) / (hi - lo)) * 100;
-            const on = i >= a && i <= b;
-            return (
-              <button key={i} aria-label={`${fmt(xs[i], def.xDigits ?? 0)} ${def.xUnit}: ${fmt(v, def.digits)} ${def.yUnit}`}
-                onPointerDown={(e) => { (e.target as HTMLElement).releasePointerCapture?.(e.pointerId); dragging.current = true; setSel([i, i]); }}
-                onPointerEnter={() => dragging.current && setSel((p) => [p[0], i])}
-                style={{ height: '100%', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 4 }}>
-                <span className="num" style={{ fontSize: 14, textAlign: 'center', color: on ? 'var(--amber)' : 'var(--text)' }}>{fmt(v, def.digits)}</span>
-                <span style={{ height: `${Math.max(2, h * 0.8)}%`, borderRadius: 4, background: on ? 'var(--amber)' : i === liveI ? 'var(--cyan)' : '#2E5C6E',
-                  outline: i === liveI ? '2px solid var(--cyan)' : 'none', outlineOffset: 1 }} />
-              </button>
-            );
-          })}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${xs.length}, minmax(0, 1fr))`, gap: 4 }}>
-          {xs.map((x, i) => <span key={i} className="num" style={{ fontSize: 13, textAlign: 'center', color: i === liveI ? 'var(--cyan)' : 'var(--muted)' }}>{fmt(x, def.xDigits ?? 0)}</span>)}
-        </div>
-        <span style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>{def.xUnit}{lv != null ? ` · agora ${fmt(lv, def.xDigits ?? 0)} ${def.xUnit}` : ''}</span>
+        <GraficoCurva xs={xs} vals={shown} sel={[a, b]} setSel={setSel} liveI={liveI} lv={lv ?? null} def={def} busy={busy} definir={definir} />
+        <TabelaCurva xs={xs} vals={shown} sel={[a, b]} setSel={setSel} liveI={liveI} def={def} busy={busy} definir={definir} />
       </section>
 
       <aside style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -153,12 +145,163 @@ export function Curva({ id }: { id: string }) {
           <button className="btn" style={{ height: 52 }} disabled={busy} onClick={() => change(-def.big)}>− {fmt(def.big, def.digits)}</button>
           <button className="btn" style={{ height: 52 }} disabled={busy} onClick={() => change(def.big)}>+ {fmt(def.big, def.digits)}</button>
         </div>
-        <div style={{ fontSize: 13, color: 'var(--muted)' }}>Arraste o dedo para escolher vários pontos.</div>
+        <div style={{ fontSize: 13, color: 'var(--muted)' }}>Arraste uma bolinha para cima ou para baixo para mudar o valor. Arraste no fundo do gráfico ou na tabela para escolher vários pontos. Dois cliques na tabela para digitar.</div>
         <span style={{ flexGrow: 1 }} />
         {msg && <div className={`notice ${msg.startsWith('Gravado') ? 'ok' : 'err'}`}>{msg}</div>}
         {s.dirty && !msg && <div className="notice" style={{ background: '#2A2116', color: '#FFD08A' }}>Mudanças valendo, mas ainda não gravadas.</div>}
         <button className="btn primary" style={{ height: 56, fontSize: 18 }} disabled={busy || !s.dirty} onClick={burn}>Gravar na ECU</button>
       </aside>
     </main>
+  );
+}
+
+type Props = { xs: number[]; vals: number[]; sel: [number, number]; setSel: (s: [number, number]) => void; liveI: number; def: CurvaDef; busy: boolean;
+  definir: (i0: number, i1: number, v: number) => Promise<void> };
+
+/** Passo "redondo" (1, 2, 2,5, 5 × 10ⁿ) para uns n intervalos. */
+function passo(range: number, n: number) { const raw = range / n || 1, e = Math.pow(10, Math.floor(Math.log10(raw))); return [1, 2, 2.5, 5, 10].map((m) => m * e).find((x) => x >= raw * 0.99) ?? raw; }
+function marcas(lo: number, hi: number, st: number) { const out: number[] = []; for (let v = Math.ceil(lo / st - 1e-9) * st; v <= hi + 1e-9; v += st) out.push(Math.round(v * 1e6) / 1e6 || 0); return out; }
+
+/**
+ * Gráfico da curva no estilo dos programas profissionais: escala de valores do lado esquerdo, escala do eixo X embaixo
+ * (proporcional, com marcas finas), linha com bolinhas que dá para arrastar, faixa da posição atual do motor.
+ */
+function GraficoCurva({ xs, vals, sel, setSel, liveI, lv, def, busy, definir }: Props & { lv: number | null }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [tam, setTam] = useState({ w: 800, h: 360 });
+  const [arraste, setArraste] = useState<{ i: number; v: number; lo: number; hi: number }>();
+  const selArr = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    const el = box.current; if (!el) return;
+    const ro = new ResizeObserver(() => setTam({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el); return () => ro.disconnect();
+  }, []);
+  const mostra = vals.map((v, i) => (arraste && i >= sel[0] && i <= sel[1] && arraste.i >= sel[0] && arraste.i <= sel[1] ? arraste.v : arraste && i === arraste.i ? arraste.v : v));
+  // escala Y: fica parada enquanto arrasta
+  let lo = Math.min(0, ...vals), hi = Math.max(...vals);
+  if (hi - lo < 1e-6) hi = lo + 1;
+  const pad = (hi - lo) * 0.12; lo = lo < 0 ? lo - pad : lo; hi += pad;
+  if (arraste) { lo = arraste.lo; hi = arraste.hi; }
+  const yStep = passo(hi - lo, 6);
+  lo = Math.floor(lo / yStep) * yStep; hi = Math.ceil(hi / yStep) * yStep;
+  const x0 = xs[0], x1 = xs[xs.length - 1] === x0 ? x0 + 1 : xs[xs.length - 1];
+  const L = 58, R = 18, T = 14, B = 44, W = Math.max(200, tam.w), H = Math.max(160, tam.h);
+  const px = (x: number) => L + ((x - x0) / (x1 - x0)) * (W - L - R);
+  const py = (v: number) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const xStep = passo(x1 - x0, Math.max(4, Math.floor((W - L - R) / 70)));
+  const yMin = yStep / 5, xMin = xStep / 5;
+  const cor = (i: number) => (i >= sel[0] && i <= sel[1] ? 'var(--amber)' : 'var(--green)');
+  const valorDoY = (clientY: number) => {
+    const r = box.current!.getBoundingClientRect();
+    const v = lo + (1 - (clientY - r.top - T) / (H - T - B)) * (hi - lo);
+    return Math.round(v / def.step) * def.step;
+  };
+  const colunaDoX = (clientX: number) => {
+    const r = box.current!.getBoundingClientRect(); const x = clientX - r.left;
+    let best = 0; xs.forEach((xv, i) => { if (Math.abs(px(xv) - x) < Math.abs(px(xs[best]) - x)) best = i; });
+    return best;
+  };
+  return (
+    <div ref={box} className="cv-graf" style={{ flexGrow: 1, minHeight: 220, position: 'relative', touchAction: 'none' }}
+      onPointerDown={(e) => {
+        if (busy) return;
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        const t = (e.target as Element).getAttribute('data-i');
+        if (t != null) {
+          const i = Number(t);
+          if (!(i >= sel[0] && i <= sel[1])) setSel([i, i]);
+          setArraste({ i, v: vals[i], lo, hi });
+        } else { const i = colunaDoX(e.clientX); selArr.current = i; setSel([i, i]); }
+      }}
+      onPointerMove={(e) => {
+        if (arraste) setArraste({ ...arraste, v: valorDoY(e.clientY) });
+        else if (selArr.current != null) setSel([selArr.current, colunaDoX(e.clientX)]);
+      }}
+      onPointerUp={() => {
+        if (arraste) {
+          const d = arraste; setArraste(undefined);
+          if (Math.abs(d.v - vals[d.i]) > 1e-9) {
+            const dentro = d.i >= sel[0] && d.i <= sel[1];
+            void definir(dentro ? sel[0] : d.i, dentro ? sel[1] : d.i, d.v);
+          }
+        }
+        selArr.current = undefined;
+      }}>
+      <svg width={W} height={H} style={{ position: 'absolute', inset: 0, display: 'block' }}>
+        <defs>
+          <linearGradient id="cv-fundo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#2b3038" /><stop offset="1" stopColor="#1b1e23" /></linearGradient>
+        </defs>
+        <rect x={L} y={T} width={W - L - R} height={H - T - B} fill="url(#cv-fundo)" />
+        {/* faixa de pontos selecionados */}
+        <rect x={px(xs[sel[0]]) - 6} y={T} width={px(xs[sel[1]]) - px(xs[sel[0]]) + 12} height={H - T - B} fill="rgba(255,159,28,0.10)" />
+        {/* linhas verticais em cada ponto da curva */}
+        {xs.map((x, i) => <line key={i} x1={px(x)} x2={px(x)} y1={T} y2={H - B} stroke="#454b55" strokeWidth={1} />)}
+        {/* escala Y (esquerda): marcas grandes com número e marcas finas */}
+        <line x1={L} x2={L} y1={T} y2={H - B} stroke="#c9ccd1" strokeWidth={2} />
+        {marcas(lo, hi, yMin).map((v) => { const big = Math.abs(v / yStep - Math.round(v / yStep)) < 1e-6; return (
+          <line key={`ym${v}`} x1={L - (big ? 10 : 5)} x2={L} y1={py(v)} y2={py(v)} stroke="#c9ccd1" strokeWidth={big ? 2 : 1} />); })}
+        {marcas(lo, hi, yStep).map((v) => <text key={`y${v}`} x={L - 14} y={py(v) + 5} fill="var(--text)" fontSize={14} fontWeight={600} textAnchor="end">{fmt(v, yStep < 1 ? (yStep < 0.1 ? 2 : 1) : 0)}</text>)}
+        {lo < 0 && <line x1={L} x2={W - R} y1={py(0)} y2={py(0)} stroke="#8a9099" strokeDasharray="4 4" />}
+        {/* escala X (embaixo) */}
+        <line x1={L} x2={W - R} y1={H - B} y2={H - B} stroke="#c9ccd1" strokeWidth={2} />
+        {marcas(x0, x1, xMin).map((v) => { const big = Math.abs(v / xStep - Math.round(v / xStep)) < 1e-6; return (
+          <line key={`xm${v}`} x1={px(v)} x2={px(v)} y1={H - B} y2={H - B + (big ? 10 : 5)} stroke="#c9ccd1" strokeWidth={big ? 2 : 1} />); })}
+        {marcas(x0, x1, xStep).map((v) => <text key={`x${v}`} x={px(v)} y={H - B + 26} fill="var(--text)" fontSize={13} textAnchor="middle">{fmt(v, def.xDigits ?? 0)}</text>)}
+        <text x={W - R} y={H - 4} fill="var(--muted)" fontSize={12} textAnchor="end">{def.xUnit}</text>
+        <text x={6} y={T + 2} fill="var(--muted)" fontSize={12} dominantBaseline="hanging">{def.yUnit}</text>
+        {/* onde o motor está agora */}
+        {lv != null && lv >= x0 && lv <= x1 && <>
+          <line x1={px(lv)} x2={px(lv)} y1={T} y2={H - B} stroke="var(--cyan)" strokeWidth={2} />
+          <text x={px(lv) + 4} y={T + 14} fill="var(--cyan)" fontSize={12}>agora {fmt(lv, def.xDigits ?? 0)}</text>
+        </>}
+        {/* linha e bolinhas */}
+        <polyline points={xs.map((x, i) => `${px(x)},${py(mostra[i])}`).join(' ')} fill="none" stroke="var(--green)" strokeWidth={2.5} />
+        {xs.map((x, i) => (
+          <g key={i}>
+            <circle cx={px(x)} cy={py(mostra[i])} r={i === liveI ? 8 : 6} fill={cor(i)} stroke={i === liveI ? 'var(--cyan)' : '#0b0c0e'} strokeWidth={2} />
+            <circle data-i={i} cx={px(x)} cy={py(mostra[i])} r={16} fill="transparent" style={{ cursor: busy ? 'default' : 'ns-resize' }} />
+          </g>
+        ))}
+        {arraste && <text x={px(xs[arraste.i])} y={py(arraste.v) - 16} fill="var(--amber)" fontSize={16} fontWeight={700} textAnchor="middle">{fmt(arraste.v, def.digits)}</text>}
+      </svg>
+    </div>
+  );
+}
+
+/** Tabela embaixo do gráfico: linha do eixo X e linha dos valores, com cor pelo valor (como nos mapas). */
+function TabelaCurva({ xs, vals, sel, setSel, liveI, def, busy, definir }: Props) {
+  const [editando, setEditando] = useState<string>();
+  const arr = useRef<number | undefined>(undefined);
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const dentro = (i: number) => i >= sel[0] && i <= sel[1];
+  const cols = `64px repeat(${xs.length}, minmax(0, 1fr))`;
+  const salvar = () => {
+    const v = Number(String(editando).replace(',', '.'));
+    setEditando(undefined);
+    if (Number.isFinite(v)) void definir(sel[0], sel[1], v);
+  };
+  return (
+    <div className="cv-tab" onPointerUp={() => (arr.current = undefined)} onPointerLeave={() => (arr.current = undefined)}>
+      <div style={{ display: 'grid', gridTemplateColumns: cols }}>
+        <span className="cv-cab">{def.xUnit}</span>
+        {xs.map((x, i) => <span key={i} className={`cv-cab ${i === liveI ? 'agora' : ''}`}>{fmt(x, def.xDigits ?? 0)}</span>)}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: cols }}>
+        <span className="cv-cab">{def.yUnit}</span>
+        {vals.map((v, i) => (
+          <button key={i} className={`cv-cel ${dentro(i) ? 'sel' : ''}`} disabled={busy}
+            style={{ background: heat(v, lo, hi === lo ? lo + 1 : hi) }}
+            onPointerDown={(e) => { (e.target as HTMLElement).releasePointerCapture?.(e.pointerId); arr.current = i; setSel(e.shiftKey ? [sel[0], i] : [i, i]); }}
+            onPointerEnter={() => arr.current != null && setSel([arr.current, i])}
+            onDoubleClick={() => { setSel(dentro(i) ? sel : [i, i]); setEditando(fmt(v, def.digits)); }}>
+            {editando != null && i === sel[0]
+              ? <input autoFocus value={editando} onChange={(e) => setEditando(e.target.value)} onBlur={salvar}
+                  onKeyDown={(e) => { if (e.key === 'Enter') salvar(); if (e.key === 'Escape') setEditando(undefined); }}
+                  onPointerDown={(e) => e.stopPropagation()} />
+              : fmt(v, def.digits)}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

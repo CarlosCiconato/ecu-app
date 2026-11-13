@@ -236,3 +236,11 @@ input.field { height: 52px; border-radius: 10px; border: 1px solid var(--line); 
 .un-grupo label { display: flex; align-items: center; gap: 10px; min-height: 34px; font-size: 14px; color: var(--muted); cursor: pointer; }
 .un-grupo label.on { color: var(--text); }
 .un-grupo input { width: 20px; height: 20px; accent-color: var(--green); flex-shrink: 0; margin: 0; }
+
+/* Curvas: tabela colorida embaixo do gráfico */
+.cv-tab { display: flex; flex-direction: column; gap: 2px; user-select: none; }
+.cv-cab { text-align: center; font-size: 13px; padding: 4px 0; background: #3a3f47; color: #e6e8eb; border-right: 1px solid #23262b; font-weight: 600; }
+.cv-cab.agora { background: var(--cyan); color: #000; }
+.cv-cel { height: 38px; border: none; border-right: 1px solid rgba(0,0,0,.35); color: #fff; font-weight: 700; font-size: 15px; padding: 0; cursor: pointer; text-shadow: 0 1px 2px rgba(0,0,0,.7); }
+.cv-cel.sel { outline: 3px solid var(--amber); outline-offset: -3px; }
+.cv-cel input { width: 90%; font-size: 15px; text-align: center; }
