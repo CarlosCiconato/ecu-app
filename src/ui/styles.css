@@ -246,8 +246,14 @@ input.field { height: 52px; border-radius: 10px; border: 1px solid var(--line); 
 .cv-cel input { width: 90%; font-size: 15px; text-align: center; }
 
 /* Diagrama de sincronismo */
-.sinc-resumo { padding: 8px 14px; display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; color: var(--muted); }
-.sinc-resumo b { color: var(--text); }
+.sinc-resumo { padding: 8px 14px; display: flex; flex-wrap: wrap; gap: 6px 0; font-size: 14px; color: #5b5440; background: #f6eed3 !important; border-color: #e0d3a6 !important; }
+.sinc-resumo > span { padding: 0 12px; border-right: 1px solid #cfc29a; }
+.sinc-resumo > span:last-child { border-right: none; }
+.sinc-resumo b { color: #2b2a24; }
+.sinc-cil { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 12px; color: var(--muted); }
+.sinc-cil > span { font-weight: 700; color: var(--text); }
+.sinc-cil > i { width: 46px; height: 30px; border-radius: 4px; background: var(--c); opacity: .85; border: 2px solid transparent; }
+.sinc-cil.on > i { border-color: #fff; box-shadow: 0 0 12px var(--c); opacity: 1; }
 
 /* Formulários: no celular/tela do carro ficam como estão; no computador viram blocos compactos em colunas
    (estilo dos programas profissionais) com a ajuda do lado direito. */

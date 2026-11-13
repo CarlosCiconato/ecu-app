@@ -10,7 +10,7 @@ const CAMPOS = ['cylindersCount', 'firingOrder', 'trigger_type', 'trigger_custom
   ...Array.from({ length: 12 }, (_, k) => `customFiringOrder${k + 1}`)];
 type Val = number | string | null;
 
-const COR_TEMPO = ['#2f7fd8', '#e7c331', '#e0474c', '#6b7380']; // admissão, compressão, expansão, escape
+const COR_TEMPO = ['#2f8ae0', '#e8c832', '#e0474c', '#8fa6c9']; // admissão, compressão, expansão, escape
 const NOME_TEMPO = ['Admissão', 'Compressão', 'Expansão', 'Escape'];
 const MODO_INJ: Record<string, string> = { Simultaneous: 'Simultânea', Sequential: 'Sequencial', Batch: 'Semissequencial (em pares)', 'Single Point': 'Monoponto' };
 const MODO_IGN: Record<string, string> = { 'Single Coil': 'Distribuidor', 'Individual Coils': 'Bobinas individuais', 'Wasted Spark': 'Centelha perdida', 'Two Distributors': 'Dois distribuidores' };
@@ -34,6 +34,10 @@ function ordem(label: string, n: number, v: Record<string, Val>): number[] {
   return o.length === n ? o : Array.from({ length: n }, (_, k) => k + 1);
 }
 const mod = (a: number, m: number) => ((a % m) + m) % m;
+/** Marcador em forma de pino (haste + bolinha), como nos programas profissionais. */
+function pino(x: number, y0: number, y1: number, cor: string, r = 4) {
+  return <><line x1={x} x2={x} y1={y0 + r} y2={y1} stroke={cor} strokeWidth={2} /><circle cx={x} cy={y0 + r} r={r} fill={cor} /></>;
+}
 function passo(range: number, n: number) { const raw = range / n, e = Math.pow(10, Math.floor(Math.log10(raw))); return [1, 1.5, 3, 4.5, 9, 10].map((m) => m * e).find((x) => x >= raw * 0.99) ?? raw; }
 
 export function Sincronismo() {
@@ -118,7 +122,7 @@ export function Sincronismo() {
     for (let base = Math.floor((inicio - ciclo) / ciclo) * ciclo; base <= fim + ciclo; base += ciclo) out.push(...fn(base));
     return out;
   };
-  const LIN = { dentes: 30, pms: 30, cil: 14, fase: 26, ign: 26, inj: 14 };
+  const LIN = { dentes: 36, pms: 30, cil: 14, fase: 26, ign: 30, inj: 16 };
   let y = 34;
   const yDentes = y; y += LIN.dentes + 8;
   const yPms = y; y += LIN.pms + 8;
@@ -154,7 +158,7 @@ export function Sincronismo() {
   // posição das rodas no cursor
   const angCrank = mod(cursor + alinh, 360);
   const linha = (yy: number, h: number, nome: string) => (
-    <g key={nome}><rect x={L} y={yy} width={larg} height={h} fill="#1d2026" /><text x={L - 8} y={yy + h / 2 + 4} fill="var(--muted)" fontSize={12} textAnchor="end">{nome}</text></g>
+    <g key={nome}><rect x={L} y={yy} width={larg} height={h} fill="#39414d" rx={3} /><text x={L - 8} y={yy + h / 2 + 4} fill="var(--muted)" fontSize={12} textAnchor="end">{nome}</text></g>
   );
 
   return (
@@ -165,7 +169,7 @@ export function Sincronismo() {
         <span>Ordem: <b>{ord.join('-')}</b></span><span>Injeção: <b>{MODO_INJ[injModo] ?? injModo}</b></span><span>Ignição: <b>{MODO_IGN[ignModo] ?? ignModo}</b></span>
         <span>Fase da injeção: <b>{fmt(faseInj, 0)}° ({momento})</b></span>
       </div>
-      <div className="card" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8, flexGrow: 1, minHeight: 0 }}>
+      <div className="card" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8, flexGrow: 1, minHeight: 0, overflowY: 'auto' }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <b style={{ flexGrow: 1 }}>Diagrama: arraste para o lado, clique para pôr o cursor</b>
           <span style={{ fontSize: 13, color: 'var(--muted)' }}>{rpmVivo ? `Motor girando: ${fmt(rpm, 0)} RPM` : 'Desenho a'}</span>
@@ -216,19 +220,19 @@ export function Sincronismo() {
             {linha(yIgn, LIN.ign, 'Ignição')}
             <g clipPath="url(#sinc-area)">
             {temCam && ciclosVisiveis((base) => { const a = base + mod(-camAng, ciclo); return a < inicio || a > fim ? [] : [
-              <g key={`f${base}`}><rect x={px(a) - 2} y={yFase + 3} width={5} height={LIN.fase - 6} fill="#ffd54a" /><text x={px(a) + 6} y={yFase + 17} fill="#ffd54a" fontSize={11}>fase</text></g>]; })}
+              <g key={`f${base}`}>{pino(px(a), yFase + 4, yFase + LIN.fase - 2, '#ff9f1c')}<text x={px(a) + 8} y={yFase + 13} fill="#ffc06b" fontSize={11}>fase</text></g>]; })}
             {ciclosVisiveis((base) => ord.flatMap((c, k) => {
               const centelhas = /Wasted/.test(ignModo) && !dois ? [0, 360] : [0];
               return centelhas.map((extra) => { const a = base + pms(k) - avanco + extra; if (a < inicio - dwellGraus || a > fim + 5) return null; return (
-                <g key={`i${base}_${k}_${extra}`}><rect x={px(a - dwellGraus)} y={yIgn + 8} width={(dwellGraus / janela) * larg} height={LIN.ign - 16} fill="rgba(255,159,28,.35)" />
-                  <line x1={px(a)} x2={px(a)} y1={yIgn + 3} y2={yIgn + LIN.ign - 3} stroke="var(--amber)" strokeWidth={2} />
-                  {extra === 0 && <text x={px(a) + 3} y={yIgn + 11} fill="var(--amber)" fontSize={10}>{c}</text>}</g>); });
+                <g key={`i${base}_${k}_${extra}`}><rect x={px(a - dwellGraus)} y={yIgn + LIN.ign - 9} width={(dwellGraus / janela) * larg} height={5} fill="rgba(255,213,74,.35)" rx={2} />
+                  {pino(px(a), yIgn + 5, yIgn + LIN.ign - 3, '#ffd54a')}
+                  {extra === 0 && <text x={px(a) + 8} y={yIgn + 14} fill="#ffd54a" fontSize={10}>{c}</text>}</g>); });
             }))}
             </g>
             {/* injeção */}
             {Array.from({ length: nInj }, (_, i) => (
               <g key={`inj${i}`}>
-                <rect x={L} y={yInj + i * LIN.inj} width={larg} height={LIN.inj - 2} fill="#1d2026" />
+                <rect x={L} y={yInj + i * LIN.inj} width={larg} height={LIN.inj - 2} fill="#39414d" />
                 <text x={L - 8} y={yInj + i * LIN.inj + 11} fill="var(--muted)" fontSize={11} textAnchor="end">{injSeq ? `${i === 0 ? 'Injeção  ' : ''}${i + 1}` : 'Injeção'}</text>
                 <g clipPath="url(#sinc-area)">{ciclosVisiveis((base) => {
                   const pulsos = injSeq ? [base + (pmsCil.get(i + 1) ?? 0) + faseInj]
@@ -236,7 +240,8 @@ export function Sincronismo() {
                   return pulsos.map((ref, k) => {
                     const ini = momento === 'fim' ? ref - injGraus : momento === 'meio' ? ref - injGraus / 2 : ref;
                     if (ini + injGraus < inicio || ini > fim) return null;
-                    return <rect key={`j${base}_${i}_${k}`} x={px(ini)} y={yInj + i * LIN.inj + 1} width={Math.max(2, (injGraus / janela) * larg)} height={LIN.inj - 4} fill="var(--cyan)" rx={2} />;
+                    return <g key={`j${base}_${i}_${k}`}><rect x={px(ini)} y={yInj + i * LIN.inj + 6} width={Math.max(2, (injGraus / janela) * larg)} height={LIN.inj - 10} fill="rgba(76,201,240,.45)" rx={2} />
+                      {pino(px(ini), yInj + i * LIN.inj + 2, yInj + (i + 1) * LIN.inj - 3, '#3ddcb4', 3)}</g>;
                   });
                 })}</g>
               </g>
@@ -247,12 +252,24 @@ export function Sincronismo() {
           </svg>
         </div>
         <div style={{ display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Roda titulo="Roda fônica (virabrequim)" n={rd.n} m={rd.m} extra={rd.extra} ang={angCrank} />
-          {temCam && <Roda titulo={`Roda de comando · ${fmt(camAng, 0)}°`} n={1} m={0} ang={mod((cursor + camAng) / 2, 360)} />}
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 13 }}>
+          <Roda titulo="Roda fônica" n={rd.n} m={rd.m} extra={rd.extra} ang={angCrank} />
+          {temCam && <Roda titulo={`Roda de comando · fase ${fmt(camAng, 0)}°`} n={1} m={0} ang={mod((cursor + camAng) / 2, 360)} />}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            {Array.from({ length: n }, (_, i) => i + 1).map((c) => {
+              const rel = mod(cursor - (pmsCil.get(c) ?? 0) + (dois ? 180 : 360), ciclo); // 0 = começo da admissão
+              const t = Math.min(3, Math.floor(rel / (ciclo / 4)));
+              const queima = t === 2 && rel - ciclo / 2 < ciclo / 8;
+              return (
+                <div key={c} className={`sinc-cil ${queima ? 'on' : ''}`} style={{ ['--c' as string]: COR_TEMPO[t] }}>
+                  <span>Cil {c}</span><i /><small>{NOME_TEMPO[t]}</small>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 13, flexBasis: '100%' }}>
             {NOME_TEMPO.map((t, i) => <span key={t}><span style={{ display: 'inline-block', width: 14, height: 10, background: COR_TEMPO[i], marginRight: 5 }} />{t}</span>)}
-            <span><span style={{ display: 'inline-block', width: 14, height: 10, background: 'var(--cyan)', marginRight: 5 }} />Bico aberto ({fmt(injMs, 1)} ms)</span>
-            <span><span style={{ display: 'inline-block', width: 14, height: 10, background: 'var(--amber)', marginRight: 5 }} />Centelha ({fmt(avanco, 1)}° de avanço, carga {fmt(dwellMs, 1)} ms)</span>
+            <span><span style={{ display: 'inline-block', width: 14, height: 10, background: '#3ddcb4', marginRight: 5 }} />Bico aberto ({fmt(injMs, 1)} ms)</span>
+            <span><span style={{ display: 'inline-block', width: 14, height: 10, background: '#ffd54a', marginRight: 5 }} />Centelha ({fmt(avanco, 1)}° de avanço, carga {fmt(dwellMs, 1)} ms)</span>
             <span><span style={{ display: 'inline-block', width: 14, height: 10, background: '#ffd54a', marginRight: 5 }} />1º dente depois da falha</span>
           </div>
         </div>
@@ -264,15 +281,16 @@ export function Sincronismo() {
 
 /** Roda vista de frente, girando com o cursor. */
 function Roda({ titulo, n, m, ang, extra = 0 }: { titulo: string; n: number; m: number; ang: number; extra?: number }) {
-  const R = 46, c = 54;
+  const R = 64, c = 74;
   const dentes = n > 0 ? [...Array.from({ length: n - m }, (_, k) => (k * 360) / n), ...Array.from({ length: extra }, (_, j) => ((j + 0.5) * 360) / n / Math.max(1, extra))] : [];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-      <svg width={108} height={108}>
+      <svg width={148} height={148}>
         <g transform={`rotate(${-ang} ${c} ${c})`}>
-          <circle cx={c} cy={c} r={R - 6} fill="#24323f" />
+          <circle cx={c} cy={c} r={R - 8} fill="#2a3a4a" stroke="#4d6a86" />
+          <circle cx={c} cy={c} r={10} fill="#1b2530" stroke="#4d6a86" />
           {dentes.map((a, k) => { const t = ((a - 90) * Math.PI) / 180; return (
-            <line key={k} x1={c + (R - 6) * Math.cos(t)} y1={c + (R - 6) * Math.sin(t)} x2={c + R * Math.cos(t)} y2={c + R * Math.sin(t)}
+            <line key={k} x1={c + (R - 8) * Math.cos(t)} y1={c + (R - 8) * Math.sin(t)} x2={c + R * Math.cos(t)} y2={c + R * Math.sin(t)}
               stroke={k === 0 ? '#ffd54a' : '#3b8fe6'} strokeWidth={n > 40 ? 2 : n > 1 ? 4 : 10} />); })}
         </g>
         <polygon points={`${c - 6},2 ${c + 6},2 ${c},12`} fill="#fff" />
