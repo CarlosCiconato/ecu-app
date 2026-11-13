@@ -105,6 +105,7 @@ export interface Ini {
   defines: Map<string, string[]>;
   tables: Map<string, TableDef>;
   calibracoes: Record<string, Calibracao>;
+  pcVars: Map<string, string[]>; // [PcVariables] de lista: variáveis só da tela (ex.: qual regra mostrar)
   valoresPadrao: Map<string, number[]>; // defaultValue = nome, v1 v2 ... (ex.: array.boardFuelOutputs da Speeduino)
   commands: Map<string, number[]>; // botões de ação do .ini (cmd_*), ex.: teste de bico
   comms: IniComms;
@@ -223,6 +224,7 @@ export function parseIni(text: string, symbols: string[] = DEFAULT_SYMBOLS): Ini
     tables: new Map(),
     commands: new Map(),
     calibracoes: {},
+    pcVars: new Map(),
     valoresPadrao: new Map(),
     comms: { queryCommand: 'S', envelope: false, ochGetCommand: 'O%2o%2c', delayAfterPortOpen: 0, interWriteDelay: 0, blockReadTimeout: 2000, bigEndian: false },
     family: 'outra',
@@ -287,6 +289,12 @@ export function parseIni(text: string, symbols: string[] = DEFAULT_SYMBOLS): Ini
       continue;
     }
 
+    if (section === 'PcVariables') {
+      const parts = splitCsv(value);
+      if (parts[0] === 'bits' && parts[2]?.startsWith('[')) ini.pcVars.set(key, parseOptions(parts.slice(3), ini.defines));
+      continue;
+    }
+
     if (section === 'Constants') {
       if (key === 'page') { page = Number(value); lastStart = 0; continue; }
       if (key === 'pageIdentifier') { pageIds = splitCsv(value).map(decodeCmd); continue; }
@@ -348,7 +356,7 @@ export function parseIni(text: string, symbols: string[] = DEFAULT_SYMBOLS): Ini
     if (section === 'OutputChannels') {
       if (key === 'ochBlockSize') { ini.ochBlockSize = Number(value); continue; }
       if (key === 'ochGetCommand') { ini.comms.ochGetCommand = unquote(value); continue; }
-      if (value.startsWith('{')) { ini.expressions.set(key, value.slice(1, -1).trim()); continue; }
+      if (value.startsWith('{')) { ini.expressions.set(key, value.slice(1, value.lastIndexOf('}')).trim()); continue; } // { expr }, "unidade"
       const parts = splitCsv(value);
       if (parts[0] === 'scalar') {
         ini.outputs.set(key, {

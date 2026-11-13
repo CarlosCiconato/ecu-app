@@ -344,6 +344,7 @@ export class EcuSession extends EventEmitter {
 
   /** Valor de uma configuração (página 1). */
   constant(name: string): number | number[] | undefined {
+    if (this.ini.pcVars.has(name)) return this.locais.get(name) ?? 0;
     const f = this.ini.constants.get(name);
     if (!f || !this.page1 || f.page !== 1) return undefined;
     return decodeField(this.page1, f);
@@ -503,6 +504,7 @@ export class EcuSession extends EventEmitter {
       const junta = (c?: string) => (cond && c ? `(${cond}) && (${c})` : cond ?? c);
       const fields = [];
       for (const f of d.fields) {
+        if (f.name && this.ini.pcVars.has(f.name)) { fields.push({ name: f.name, label: this.pt(f.label || f.name), digits: 0, step: 1, big: 1, cond: junta(f.cond) }); continue; }
         const k = f.name ? this.ini.constants.get(f.name) : undefined;
         if (!f.name || !k || k.kind === 'array' || k.page !== 1) continue;
         const dg = k.kind === 'scalar' ? Math.min(3, Math.max(0, k.digits ?? 0)) : 0;
@@ -653,7 +655,10 @@ export class EcuSession extends EventEmitter {
   }
 
   /** Muda um campo de opções (bits), ex.: a estratégia de combustível. */
+  private locais = new Map<string, number>(); // variáveis só da tela ([PcVariables])
+
   async setBits(name: string, value: number) {
+    if (this.ini.pcVars.has(name)) { this.locais.set(name, value); return; }
     const f = this.ini.constants.get(name);
     if (!f || f.kind !== 'bits' || f.page !== 1 || !this.page1 || !this.canWrite()) throw new Error(`campo ${name} indisponível`);
     const [lo, hi] = encodeBits(this.page1, f, value);
@@ -681,6 +686,7 @@ export class EcuSession extends EventEmitter {
 
   /** Muda um campo simples ou de opções (página 1) e manda na hora para a ECU. */
   async setValue(name: string, value: number) {
+    if (this.ini.pcVars.has(name)) { this.locais.set(name, Math.round(value)); return Math.round(value); }
     const f = this.ini.constants.get(name);
     if (!f || f.page !== 1 || f.kind === 'array' || !this.page1 || !this.canWrite()) throw new Error(`campo ${name} indisponível`);
     let v = value;
@@ -963,6 +969,8 @@ export class EcuSession extends EventEmitter {
 
   /** Lista de opções de um campo de bits, para mostrar o nome na tela. */
   options(name: string): string[] {
+    const pv = this.ini.pcVars.get(name);
+    if (pv) return pv.map(ptOpcao);
     const f = this.ini.constants.get(name);
     if (f?.kind !== 'bits') return [];
     return this.ini.family === 'rusefi' ? f.options : f.options.map(ptOpcao);

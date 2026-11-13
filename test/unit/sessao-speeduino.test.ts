@@ -121,6 +121,11 @@ describe('sessão com Speeduino', () => {
     expect(s.condicoes([bico4.cond!, ign2.cond!])).toEqual([true, true]);
     await s.command('cmdtestinj1Pulsed');
     expect(ecu.comandos).toContain(0x0203);
+    // variável só da tela ([PcVariables]): escolher a regra das saídas programáveis troca o painel visível
+    expect(s.options('prgm_out_selection').length).toBe(8);
+    expect(s.condicoes(['prgm_out_selection == 2'])).toEqual([false]);
+    await s.setValue('prgm_out_selection', 2);
+    expect(s.condicoes(['prgm_out_selection == 2'])).toEqual([true]);
     // calibração: temperatura do motor (sensor GM) e sonda linear
     const cal = s.calibracaoIni('std_ms2gentherm');
     const gm = cal.termistores.find((t) => t.nome === 'GM')!;
