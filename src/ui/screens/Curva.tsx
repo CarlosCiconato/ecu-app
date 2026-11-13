@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { call, useLive, useStatus } from '../api';
 import { fmt } from '../format';
-import { heat } from './MapaInjecao';
+import { heat } from '../cores';
 
 export interface CurvaDef {
   title: string;

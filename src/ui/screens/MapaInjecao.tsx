@@ -30,14 +30,8 @@ export const MAPA_IGNICAO: MapaConfig = {
 };
 type Sel = { r0: number; c0: number; r1: number; c1: number };
 
-export function heat(v: number, lo: number, hi: number) {
-  const t = hi > lo ? Math.max(0, Math.min(1, (v - lo) / (hi - lo))) : 0;
-  const stops = [[31, 58, 95], [46, 92, 110], [122, 90, 30], [168, 50, 30]];
-  const x = t * (stops.length - 1);
-  const i = Math.min(stops.length - 2, Math.floor(x));
-  const f = x - i;
-  return `rgb(${stops[i].map((a, k) => Math.round(a + (stops[i + 1][k] - a) * f)).join(',')})`;
-}
+import { heat } from '../cores';
+export { heat };
 
 /** Índice do eixo mais perto do valor ao vivo (para marcar onde o motor está). */
 function nearest(bins: number[], v: number | null | undefined) {
