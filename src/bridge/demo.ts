@@ -251,6 +251,19 @@ export class DemoEngine {
   private clt = 35;
   private rpm = 900;
   private latched = 0;
+  // Controle do simulador (tela "Simulador" no modo demonstração)
+  ligado = true;
+  modo: 'auto' | 'manual' = 'auto';
+  tpsManual = 0;
+  private partida = 0; // instante em que deu a partida (gira o motor de arranque ~0,8 s)
+  controle(c: { ligado?: boolean; modo?: 'auto' | 'manual'; tps?: number; frio?: boolean }) {
+    if (c.ligado != null && c.ligado !== this.ligado) { this.ligado = c.ligado; if (c.ligado) this.partida = Date.now(); }
+    if (c.modo) { this.modo = c.modo; if (c.modo === 'auto') this.t0 = Date.now(); }
+    if (c.tps != null) { this.tpsManual = Math.max(0, Math.min(100, c.tps)); this.modo = 'manual'; }
+    if (c.frio) this.clt = 20;
+    return this.estado();
+  }
+  estado() { return { ligado: this.ligado, modo: this.modo, tps: this.tpsManual }; }
   // Senhas: imita o firmware (3 erros = 30 s bloqueado).
   private entered = [false, false, false, false];
   private pwResult = 0;
@@ -310,23 +323,29 @@ export class DemoEngine {
     const t = ((Date.now() - this.t0) / 1000) % 24;
     // Borboleta: lenta, blips, puxada longa até o corte.
     let tps = 0;
-    if (t > 3 && t < 4.2) tps = 35;
+    if (this.modo === 'manual') tps = this.tpsManual;
+    else if (t > 3 && t < 4.2) tps = 35;
     else if (t > 7 && t < 8) tps = 60;
     else if (t > 11 && t < 18) tps = 100;
-    const targetRpm = tps === 0 ? 900 : tps < 50 ? 3200 : tps < 80 ? 4800 : 7900;
-    const rate = targetRpm > this.rpm ? (tps > 80 ? 0.035 : 0.12) : 0.06;
-    this.rpm += (targetRpm - this.rpm) * rate + (Math.random() - 0.5) * 18;
+    const arranque = this.ligado && Date.now() - this.partida < 800;
+    // RPM alvo segue a borboleta (lenta mais alta com o motor frio); desligado = para; arranque = ~250 RPM
+    const lenta = this.clt < 60 ? 1300 - this.clt * 6 : 900;
+    const targetRpm = !this.ligado ? 0 : arranque ? 250 : tps < 2 ? lenta : Math.min(7900, lenta + tps * 75);
+    const rate = !this.ligado ? 0.08 : arranque ? 0.3 : targetRpm > this.rpm ? (tps > 80 ? 0.035 : 0.12) : 0.06;
+    this.rpm += (targetRpm - this.rpm) * rate + (this.ligado ? (Math.random() - 0.5) * 18 : 0);
+    if (!this.ligado && this.rpm < 30) this.rpm = 0;
     const rpm = Math.max(0, this.rpm);
+    const girando = rpm > 50;
     const boostKpa = tps > 80 ? Math.min(180, Math.max(0, (rpm - 3500) / 25)) : 0;
-    const map = tps === 0 ? 34 + Math.random() * 2 : Math.min(101, 40 + tps * 0.6) + boostKpa;
-    this.clt = Math.min(88, this.clt + 0.015);
+    const map = !girando ? 101.3 : tps < 2 ? 34 + Math.random() * 2 : Math.min(101, 40 + tps * 0.6) + boostKpa;
+    if (girando) this.clt = Math.min(88, this.clt + 0.015);
 
     const xs = decodeArray(page, this.ini.constants.get('injTimeRpmBins') as ArrayField);
     const ys = decodeArray(page, this.ini.constants.get('injTimeLoadBins') as ArrayField);
     const z = decodeArray(page, this.ini.constants.get('injTimeTable') as ArrayField);
-    const inj = lookup(xs, ys, z, rpm, map);
+    const inj = girando ? lookup(xs, ys, z, rpm, map) : 0;
     const target = map > 110 ? 0.82 : tps > 0 ? 0.92 : 1.0;
-    const lambda = target + (Math.random() - 0.5) * 0.03;
+    const lambda = girando ? target + (Math.random() - 0.5) * 0.03 : 1.5;
 
     const set = (name: string, v: number) => {
       const f = this.ini.outputs.get(name);
@@ -347,17 +366,17 @@ export class DemoEngine {
     const iz = decodeArray(page, this.ini.constants.get('ignitionTable') as ArrayField);
     set('ignitionAdvanceCyl1', lookup(ixs, iys, iz, rpm, map));
     set('ignitionLoad', map);
-    set('oilPressure', 100 + rpm / 20);
+    set('oilPressure', girando ? 100 + rpm / 20 : 0);
     set('lowFuelPressure', 300 + boostKpa);
     set('rawTps1Primary', 0.52 + tps * 0.0397);
     set('rawMap', 0.4 + map * 0.0155);
     set('rawClt', 3.9 - this.clt * 0.032);
     set('rawIat', 2.6);
     set('rawLowFuelPressure', 0.5 + (300 + boostKpa) / 1000 * 4);
-    set('rawOilPressure', 0.5 + (100 + rpm / 20) / 689 * 4);
+    set('rawOilPressure', 0.5 + (girando ? 100 + rpm / 20 : 0) / 689 * 4);
     set('internalMcuTemperature', 41);
     set('seconds', (Date.now() - this.t0) / 1000);
-    set('engineRunTime', (Date.now() - this.t0) / 1000);
+    set('engineRunTime', girando ? (Date.now() - this.t0) / 1000 : 0);
     set('totalTriggerErrorCounter', 0);
     set('sd_present', 1);
     {
@@ -392,7 +411,7 @@ export class DemoEngine {
     }
     set('ltftCorrection1', map > 110 ? 2.4 : -0.8); set('ltftLearning', this.clt > 70 ? 1 : 0);
     set('rawPpsPrimary', 0.75 + tps * 0.0345); set('rawPpsSecondary', 0.37 + tps * 0.0173); set('throttlePedalPosition', tps);
-    set('VBatt', 13.9 + (Math.random() - 0.5) * 0.1);
+    set('VBatt', (arranque ? 10.6 : girando ? 13.9 : 12.5) + (Math.random() - 0.5) * 0.1);
     set('running_baseFuel', inj * 6);
     // Alerta 3 (MAP acima de 250 kPa) acende de verdade na puxada.
     const on = map > 250;

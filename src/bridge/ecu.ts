@@ -328,6 +328,12 @@ export class EcuSession extends EventEmitter {
     tick();
   }
 
+  /** Simulador do modo demonstração: liga/desliga o motor, borboleta manual ou automática. */
+  demoControle(c: { ligado?: boolean; modo?: 'auto' | 'manual'; tps?: number; frio?: boolean }) {
+    if (!this.demo) throw new Error('Só no modo demonstração.');
+    return this.demo.controle(c);
+  }
+
   disconnect() {
     this.demo = undefined;
     this.offlinePath = undefined;

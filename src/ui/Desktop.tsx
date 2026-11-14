@@ -1,4 +1,5 @@
 // Layout de computador (Mac/PC), no estilo dos programas profissionais para computador (manual de referência, p. 51-52):
+import { DemoControle } from './DemoControle';
 // barra superior, barra lateral de grupos, submenu de funções, abas, área de ajuste,
 // painel em tempo real embaixo e barra de status.
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
@@ -214,6 +215,7 @@ export function Desktop() {
   return (
     <div className="dk">
       <BipeAlerta on={usePrefs().som} />
+      <DemoControle desktop />
       {/* 2 - Barra superior */}
       <header className="dk-top">
         <span className="dk-logo">ECU</span>

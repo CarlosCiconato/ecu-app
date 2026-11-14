@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTela } from './tela';
+import { DemoControle } from './DemoControle';
 import { Sincronismo } from './screens/Sincronismo';
 import { useLive, useStatus } from './api';
 import { fmt } from './format';
@@ -174,6 +175,7 @@ export function App() {
   return (
     <div className="stage" style={{ width: largura, transform: `translate(-50%, -50%) scale(${scale})` }}>
       <BipeAlerta on={prefs.som} />
+      <DemoControle />
       {screen !== 'painel' && <TopBar screen={screen} go={setScreen} />}
       <ScreenView screen={screen} go={setScreen} />
       {luz < 100 && <div style={{ position: 'absolute', inset: 0, background: '#000', opacity: (100 - luz) / 100, pointerEvents: 'none', zIndex: 50 }} />}

@@ -147,6 +147,7 @@ wss.on('connection', (ws) => {
           break;
         }
         case 'demo': pausaAuto = true; ecu.connectDemo(); reply(true); break;
+        case 'demoControle': reply(ecu.demoControle((msg.c as Record<string, never>) ?? {})); break;
         case 'disconnect': pausaAuto = true; ecu.disconnect(); reply(true); break;
         case 'modo': reply({ painel, auto: painel && !pausaAuto, wifi: WIFI_ECU }); break;
         case 'autoLigar': pausaAuto = false; reply(true); void autoLigar(); break;
