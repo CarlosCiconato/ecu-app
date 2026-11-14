@@ -1,4 +1,5 @@
 import { useLive, useStatus } from '../api';
+import { useTela } from '../tela';
 import type { Screen } from '../App';
 import { fmt } from '../format';
 import { estequiometrica, lambdaOut, lambdaUnit, pressDigits, pressRange, pressure, setPrefs, speedOut, speedUnit, tempOut, tempUnit, usePrefs, type Prefs } from '../prefs';
@@ -145,8 +146,8 @@ function Coluna({ g, i, id }: { g: Gauge; i: number; id: string }) {
   </g>;
 }
 
-function BarraRpm({ rpm, max, shift }: { rpm: number; max: number; shift: number }) {
-  const x = 20, y = 84, w = 984, h = 76, seg = 60, gap = 3, sw = (w - gap * (seg - 1)) / seg, on = (rpm / max) * seg, sf = shift / max, every = max > 12000 ? 2000 : 1000;
+function BarraRpm({ rpm, max, shift, w = 984 }: { rpm: number; max: number; shift: number; w?: number }) {
+  const x = 20, y = 84, h = 76, seg = 60, gap = 3, sw = (w - gap * (seg - 1)) / seg, on = (rpm / max) * seg, sf = shift / max, every = max > 12000 ? 2000 : 1000;
   return <g>
     {Array.from({ length: seg }, (_, i) => { const f = i / seg, hi = h * (0.7 + 0.3 * f);
       const c = i < on ? (f < sf - 0.2 ? '#FFD400' : f < sf ? `hsl(${48 - ((f - (sf - 0.2)) / 0.2) * 30},100%,50%)` : '#FF1A1A') : f >= sf ? '#3a1414' : '#1E1E1E';
@@ -177,20 +178,23 @@ export function Painel({ go }: { go: (s: Screen) => void }) {
   // shift light da ECU (RPM de troca da marcha atual); sem ele, a barra usa o valor da configuração do painel
   const shift = v.shiftLightTarget ? v.shiftLightTarget : p.shiftRpm;
   const trocar = !!v.shiftLightOn;
+  // celular deitado: a tela fica mais larga que 1024; o meio vai para o centro e a direita para a borda
+  const { largura: W } = useTela(), dx = W - 1024;
   return (
-    <main style={{ position: 'relative', width: 1024, height: 600, background: '#000', flexShrink: 0 }}>
-      <svg width={1024} height={600} viewBox="0 0 1024 600" onClick={proximo} style={{ display: 'block', fontFamily: 'Barlow, system-ui, sans-serif', cursor: ativos.length > 1 ? 'pointer' : undefined }}>
+    <main style={{ position: 'relative', width: W, height: 600, background: '#000', flexShrink: 0 }}>
+      <svg width={W} height={600} viewBox={`0 0 ${W} 600`} onClick={proximo} style={{ display: 'block', fontFamily: 'Barlow, system-ui, sans-serif', cursor: ativos.length > 1 ? 'pointer' : undefined }}>
         <text x={22} y={70} fill={TXT} fontSize={86} fontWeight={700} fontFamily={COND}>{v.RPMValue == null ? '–' : String(Math.round(v.RPMValue))}</text>
         <text x={240} y={36} fill={TXT} fontSize={26} fontWeight={700} fontFamily={COND}>{p.maxRpm}</text>
         <text x={240} y={60} fill={TXT} fontSize={19} fontWeight={700}>RPM</text>
-        <BarraRpm rpm={rpm} max={p.maxRpm} shift={shift} />
+        <BarraRpm rpm={rpm} max={p.maxRpm} shift={shift} w={W - 40} />
         <Arco g={G[0]} />
-        <Grande g={G[1]} id={ids[1]} x={360} w={200} y={212} max={250} align="middle" />
-        <Grande g={G[2]} id={ids[2]} x={580} w={420} y={206} max={124} align="end" />
+        <g transform={`translate(${dx / 2} 0)`}><Grande g={G[1]} id={ids[1]} x={360} w={200} y={212} max={250} align="middle" /><Barra g={G[5]} /></g>
+        <g transform={`translate(${dx} 0)`}>
+          <Grande g={G[2]} id={ids[2]} x={580} w={420} y={206} max={124} align="end" />
+          {[6, 7, 8].map((k, i) => <Coluna key={k} g={G[k]} i={i} id={ids[k]} />)}
+        </g>
         <Numero g={G[3]} id={ids[3]} x={22} />
         <Numero g={G[4]} id={ids[4]} x={172} />
-        <Barra g={G[5]} />
-        {[6, 7, 8].map((k, i) => <Coluna key={k} g={G[k]} i={i} id={ids[k]} />)}
       </svg>
       {/* shift light: a tela inteira pisca na rotação de troca (estilo profissional) */}
       {trocar && <div className="shift-flash" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', border: `14px solid ${RED}` }} />}

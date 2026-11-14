@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTela } from './tela';
 import { Sincronismo } from './screens/Sincronismo';
 import { useLive, useStatus } from './api';
 import { fmt } from './format';
@@ -39,16 +40,6 @@ export const TITLES: Record<string, string> = {
   conexao: 'Conexão com a ECU', menu: 'Menu principal', painel: 'Painel de instrumentos', mapa: 'Mapa principal de injeção', ignicao: 'Mapa principal de ignição', alertas: 'Alertas', ajustes: 'Gerenciador de ajustes', motor: 'Características do motor', sinalRpm: 'Sinal de RPM', sincronismo: 'Diagrama de sincronismo', outras: 'Corte de rotação e largada', sensores: 'Sensores e calibração', diagnostico: 'Diagnóstico', favoritos: 'Favoritos', turbo: 'Controle de turbo', senhas: 'Senhas', interface: 'Unidades de medida', telaSom: 'Tela, som e tela inicial', painelCfg: 'Configuração do painel', versao: 'Versões, odômetro e horímetro', ftm: 'Mapas (.ftm)', mapaPadrao: 'Mapa padrão', ltft: 'Correção de longo prazo', tabelasEcu: 'Funções da ECU', testes: 'Teste de saídas', inicio: 'Tela inicial', datalogger: 'Datalogger', tema: 'Tema do programa',
 };
 
-function useFit() {
-  const [scale, setScale] = useState(1);
-  useEffect(() => {
-    const f = () => setScale(Math.min(window.innerWidth / 1024, window.innerHeight / 600));
-    f();
-    window.addEventListener('resize', f);
-    return () => window.removeEventListener('resize', f);
-  }, []);
-  return scale;
-}
 
 export function stateColor(state: string) {
   return state === 'conectado' ? 'var(--green)' : state === 'erro' ? 'var(--red)' : state === 'desconectado' ? '#5a5e66' : 'var(--yellow)';
@@ -167,7 +158,7 @@ export function App() {
   if (isDesktop && new URLSearchParams(location.search).has('solo')) return <Solo />;
   if (isDesktop) return <Desktop />;
 
-  const scale = useFit();
+  const { scale, largura } = useTela();
   const s = useStatus();
   const [screen, setScreen] = useState<Screen>(() => (new URLSearchParams(location.search).get('tela') as Screen) || 'conexao');
   const prefs = usePrefs();
@@ -181,7 +172,7 @@ export function App() {
   }, [s.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="stage" style={{ transform: `translate(-50%, -50%) scale(${scale})` }}>
+    <div className="stage" style={{ width: largura, transform: `translate(-50%, -50%) scale(${scale})` }}>
       <BipeAlerta on={prefs.som} />
       {screen !== 'painel' && <TopBar screen={screen} go={setScreen} />}
       <ScreenView screen={screen} go={setScreen} />
