@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { arrastarDedo } from '../toque';
 import { call, useLive, useStatus, useTable, type TableData } from '../api';
 import { fmt } from '../format';
 import { isDesktop } from '../App';
@@ -304,14 +305,6 @@ export function MapaTabela({ cfg }: { cfg: MapaConfig }) {
     <main className="screen" style={{ flexDirection: 'row', gap: 14, paddingTop: 10 }}>
       <section className="card"
         onPointerUp={() => (dragging.current = false)} onPointerLeave={() => (dragging.current = false)} onPointerCancel={() => (dragging.current = false)}
-        // dedo (celular/tablet): o toque não passa de uma célula para outra sozinho; acha a célula embaixo do dedo
-        onPointerMove={(e) => {
-          if (!dragging.current || e.pointerType === 'mouse') return;
-          const el = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest<HTMLElement>('[data-cel]');
-          if (!el) return;
-          const r = Number(el.dataset.r), c = Number(el.dataset.c);
-          setSel((p) => (p.r1 === r && p.c1 === c ? p : { ...p, r1: r, c1: c }));
-        }}
         style={{ flexGrow: 1, padding: 10, display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, touchAction: 'none' }}>
         <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 3 }}>
           <span style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', alignSelf: 'end' }}>{cfg.y ? cfg.y.name : cru ? t.yUnits || 'Y' : tps ? 'TPS %' : 'bar'} \ {xName}</span>
@@ -331,7 +324,10 @@ export function MapaTabela({ cfg }: { cfg: MapaConfig }) {
                   onPointerDown={(e) => {
                     if (e.button === 2) return;
                     (e.target as HTMLElement).releasePointerCapture?.(e.pointerId); dragging.current = true;
-                    if (e.pointerType !== 'mouse') e.preventDefault(); // não rola a tela nem dá zoom
+                    if (e.pointerType !== 'mouse') {
+                      e.preventDefault(); // não rola a tela nem dá zoom
+                      arrastarDedo('[data-cel]', (el) => { const rr = Number(el.dataset.r), cc = Number(el.dataset.c); setSel((p) => (p.r1 === rr && p.c1 === cc ? p : { ...p, r1: rr, c1: cc })); });
+                    }
                     if (e.shiftKey) setSel((p) => ({ ...p, r1: r, c1: c })); else setSel({ r0: r, c0: c, r1: r, c1: c });
                   }}
                   onDoubleClick={() => setTyping('')}

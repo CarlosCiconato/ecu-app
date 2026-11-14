@@ -1,4 +1,5 @@
 // Editor de curvas (tabelas de 1 linha): compensações por temperatura, partida etc.
+import { arrastarDedo } from '../toque';
 // Cada curva = eixo X (ex.: temperatura) + valores. Toque/arraste nas colunas
 // para escolher e use os botões para mudar. Mostra onde o motor está agora.
 import { useEffect, useRef, useState } from 'react';
@@ -282,13 +283,7 @@ function TabelaCurva({ xs, vals, sel, setSel, liveI, def, busy, definir }: Props
   };
   return (
     <div className="cv-tab" style={{ touchAction: 'none' }} onPointerUp={() => (arr.current = undefined)} onPointerLeave={() => (arr.current = undefined)}
-      onPointerCancel={() => (arr.current = undefined)}
-      onPointerMove={(e) => {
-        // dedo: acha a célula embaixo do dedo (o toque não passa de uma célula para outra sozinho)
-        if (arr.current == null || e.pointerType === 'mouse') return;
-        const el = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest<HTMLElement>('[data-i]');
-        if (el) { const i = Number(el.dataset.i); if (sel[1] !== i) setSel([arr.current, i]); }
-      }}>
+      onPointerCancel={() => (arr.current = undefined)}>
       <div style={{ display: 'grid', gridTemplateColumns: cols }}>
         <span className="cv-cab">{def.xUnit}</span>
         {xs.map((x, i) => <span key={i} className={`cv-cab ${i === liveI ? 'agora' : ''}`}>{fmt(x, def.xDigits ?? 0)}</span>)}
@@ -298,7 +293,10 @@ function TabelaCurva({ xs, vals, sel, setSel, liveI, def, busy, definir }: Props
         {vals.map((v, i) => (
           <button key={i} data-i={i} className={`cv-cel ${dentro(i) ? 'sel' : ''}`} disabled={busy}
             style={{ background: heat(v, lo, hi === lo ? lo + 1 : hi) }}
-            onPointerDown={(e) => { (e.target as HTMLElement).releasePointerCapture?.(e.pointerId); arr.current = i; setSel(e.shiftKey ? [sel[0], i] : [i, i]); }}
+            onPointerDown={(e) => {
+              (e.target as HTMLElement).releasePointerCapture?.(e.pointerId); arr.current = i; setSel(e.shiftKey ? [sel[0], i] : [i, i]);
+              if (e.pointerType !== 'mouse') { const ini = i; arrastarDedo('.cv-cel[data-i]', (el) => setSel([ini, Number(el.dataset.i)])); }
+            }}
             onPointerEnter={() => arr.current != null && setSel([arr.current, i])}
             onDoubleClick={() => { setSel(dentro(i) ? sel : [i, i]); setEditando(fmt(v, def.digits)); }}>
             {editando != null && i === sel[0]
