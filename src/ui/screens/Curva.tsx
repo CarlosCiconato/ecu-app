@@ -281,7 +281,14 @@ function TabelaCurva({ xs, vals, sel, setSel, liveI, def, busy, definir }: Props
     if (Number.isFinite(v)) void definir(sel[0], sel[1], v);
   };
   return (
-    <div className="cv-tab" onPointerUp={() => (arr.current = undefined)} onPointerLeave={() => (arr.current = undefined)}>
+    <div className="cv-tab" style={{ touchAction: 'none' }} onPointerUp={() => (arr.current = undefined)} onPointerLeave={() => (arr.current = undefined)}
+      onPointerCancel={() => (arr.current = undefined)}
+      onPointerMove={(e) => {
+        // dedo: acha a célula embaixo do dedo (o toque não passa de uma célula para outra sozinho)
+        if (arr.current == null || e.pointerType === 'mouse') return;
+        const el = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest<HTMLElement>('[data-i]');
+        if (el) { const i = Number(el.dataset.i); if (sel[1] !== i) setSel([arr.current, i]); }
+      }}>
       <div style={{ display: 'grid', gridTemplateColumns: cols }}>
         <span className="cv-cab">{def.xUnit}</span>
         {xs.map((x, i) => <span key={i} className={`cv-cab ${i === liveI ? 'agora' : ''}`}>{fmt(x, def.xDigits ?? 0)}</span>)}
@@ -289,7 +296,7 @@ function TabelaCurva({ xs, vals, sel, setSel, liveI, def, busy, definir }: Props
       <div style={{ display: 'grid', gridTemplateColumns: cols }}>
         <span className="cv-cab">{def.yUnit}</span>
         {vals.map((v, i) => (
-          <button key={i} className={`cv-cel ${dentro(i) ? 'sel' : ''}`} disabled={busy}
+          <button key={i} data-i={i} className={`cv-cel ${dentro(i) ? 'sel' : ''}`} disabled={busy}
             style={{ background: heat(v, lo, hi === lo ? lo + 1 : hi) }}
             onPointerDown={(e) => { (e.target as HTMLElement).releasePointerCapture?.(e.pointerId); arr.current = i; setSel(e.shiftKey ? [sel[0], i] : [i, i]); }}
             onPointerEnter={() => arr.current != null && setSel([arr.current, i])}

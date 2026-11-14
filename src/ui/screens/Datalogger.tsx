@@ -359,7 +359,7 @@ export function Datalogger() {
         {/* 16: área gráfica */}
         <section className="card" style={{ flex: 1, minWidth: 0, minHeight: 0, padding: 6, display: 'flex' }}>
           {log && log.t.length > 1 ? (
-            <canvas ref={cv} style={{ flex: 1, minWidth: 0, cursor: 'crosshair' }}
+            <canvas ref={cv} style={{ flex: 1, minWidth: 0, cursor: 'crosshair', touchAction: 'none' }}
               onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); if (!recording) setGmenu({ x: e.clientX, y: e.clientY, t: timeAtX(e.clientX) }); }}
               onPointerDown={(e) => { if (e.button === 2) return; if (!recording) { drag.current = { x: e.clientX, v: win }; (e.target as HTMLElement).setPointerCapture(e.pointerId); } }}
               onPointerMove={(e) => {

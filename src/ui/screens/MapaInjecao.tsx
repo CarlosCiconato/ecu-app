@@ -302,8 +302,17 @@ export function MapaTabela({ cfg }: { cfg: MapaConfig }) {
   const cols = `56px repeat(${t.cols}, minmax(0, 1fr))`;
   return (
     <main className="screen" style={{ flexDirection: 'row', gap: 14, paddingTop: 10 }}>
-      <section className="card" style={{ flexGrow: 1, padding: 10, display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}
-        onPointerUp={() => (dragging.current = false)} onPointerLeave={() => (dragging.current = false)}>
+      <section className="card"
+        onPointerUp={() => (dragging.current = false)} onPointerLeave={() => (dragging.current = false)} onPointerCancel={() => (dragging.current = false)}
+        // dedo (celular/tablet): o toque não passa de uma célula para outra sozinho; acha a célula embaixo do dedo
+        onPointerMove={(e) => {
+          if (!dragging.current || e.pointerType === 'mouse') return;
+          const el = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest<HTMLElement>('[data-cel]');
+          if (!el) return;
+          const r = Number(el.dataset.r), c = Number(el.dataset.c);
+          setSel((p) => (p.r1 === r && p.c1 === c ? p : { ...p, r1: r, c1: c }));
+        }}
+        style={{ flexGrow: 1, padding: 10, display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, touchAction: 'none' }}>
         <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 3 }}>
           <span style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', alignSelf: 'end' }}>{cfg.y ? cfg.y.name : cru ? t.yUnits || 'Y' : tps ? 'TPS %' : 'bar'} \ {xName}</span>
           {t.xBins.map((x, c) => (
@@ -318,10 +327,11 @@ export function MapaTabela({ cfg }: { cfg: MapaConfig }) {
               const selected = inSel(r, c);
               const isLive = r === liveR && c === liveC;
               return (
-                <button key={c} aria-label={`${yLabel(t.yBins[r])} · ${t.xBins[c]} ${cfg.x?.unit ?? 'RPM'}: ${fmt(v, cfg.digits)} ${cfg.unit}`}
+                <button key={c} data-cel="" data-r={r} data-c={c} aria-label={`${yLabel(t.yBins[r])} · ${t.xBins[c]} ${cfg.x?.unit ?? 'RPM'}: ${fmt(v, cfg.digits)} ${cfg.unit}`}
                   onPointerDown={(e) => {
                     if (e.button === 2) return;
                     (e.target as HTMLElement).releasePointerCapture?.(e.pointerId); dragging.current = true;
+                    if (e.pointerType !== 'mouse') e.preventDefault(); // não rola a tela nem dá zoom
                     if (e.shiftKey) setSel((p) => ({ ...p, r1: r, c1: c })); else setSel({ r0: r, c0: c, r1: r, c1: c });
                   }}
                   onDoubleClick={() => setTyping('')}
@@ -367,6 +377,16 @@ export function MapaTabela({ cfg }: { cfg: MapaConfig }) {
           <button className="btn big" disabled={busy} onClick={() => change(cfg.small[2])}>+ {cfg.small[0]}</button>
           <button className="btn" style={{ height: 52 }} disabled={busy} onClick={() => change(cfg.big[1])}>− {cfg.big[0]}</button>
           <button className="btn" style={{ height: 52 }} disabled={busy} onClick={() => change(cfg.big[2])}>+ {cfg.big[0]}</button>
+          {!isDesktop && (
+            // no celular/tablet não tem botão direito: este botão abre o mesmo menu (interpolar, suavizar, somar…)
+            <button className="btn" style={{ height: 48, gridColumn: 'span 2' }} disabled={busy} onClick={(e) => {
+              e.stopPropagation();
+              const b = e.currentTarget.getBoundingClientRect(), st = e.currentTarget.closest('.stage') as HTMLElement | null;
+              if (!st) return setMenu({ x: b.left, y: b.top });
+              const r = st.getBoundingClientRect(), k = r.width / st.offsetWidth;
+              setMenu({ x: (b.left - r.left) / k - 60, y: Math.max(10, (b.top - r.top) / k - 330) });
+            }}>Mais funções…</button>
+          )}
         </div>
         <div style={{ fontSize: 13, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ width: 14, height: 14, borderRadius: 3, border: '2px solid var(--cyan)' }} />Ponto atual do motor
