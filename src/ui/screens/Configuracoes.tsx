@@ -268,8 +268,12 @@ export const FORMS: Record<string, { title: string; sections: SecaoDef[] }> = {
     ] },
     { title: 'Blip na redução de marcha', fields: [
       { name: 'blipThrottleAdd', label: 'Abre a mais', unit: '%', step: 1, big: 10 },
-      { name: 'blipDuration', label: 'Por quanto tempo', unit: 'ms', step: 10, big: 100 },
+      { name: 'blipDuration', label: 'Por quanto tempo', unit: 'ms', step: 10, big: 100, hint: 'Até 1000 ms (1 segundo).' },
       { name: 'blipMinRpm', label: 'Só acima de', unit: 'RPM', step: 100, big: 500 },
+      // Firmware PR 6 (segurança): o blip só abre a borboleta com o pé quase fora do pedal.
+      { name: 'blipMaxPedal', label: 'Só com o pedal abaixo de', unit: '%', step: 1, big: 10,
+        hint: 'O blip só acontece com o pé quase fora do acelerador (recomendado 10 %). 100 % = não confere o pedal.',
+        warn: (v) => (v.blipMaxPedal === 0 ? 'Em 0 % o blip NUNCA acontece. Mapas antigos chegam assim depois de atualizar o firmware: use 10 %.' : undefined) },
     ] },
   ] },
   can: { title: 'Rede CAN para painéis', sections: [
@@ -655,6 +659,9 @@ export const FORMS: Record<string, { title: string; sections: SecaoDef[] }> = {
     { title: 'Botões e troca de ajuste', fields: [
       { name: 'tuneSwitchPin', label: 'Botão de troca de ajuste' },
       { name: 'tuneSelectorChannel', label: 'Troca de ajuste por tensão (entrada analógica)', hint: 'Uma chave de 3 posições com resistores escolhe o ajuste 1, 2 ou 3.' },
+      { name: 'tuneSwitchMaxTps', label: 'Troca com motor ligado só com a borboleta abaixo de', unit: '%', step: 1, big: 10,
+        hint: 'Com o motor ligado, o ajuste só troca com a borboleta abaixo deste valor (recomendado 20 %). Motor parado troca sempre. 100 % = troca a qualquer hora (como antes).',
+        warn: (v) => (v.tuneSwitchMaxTps === 0 ? 'Em 0 % o ajuste só troca com o motor parado. Mapas antigos chegam assim depois de atualizar o firmware: use 20 %.' : undefined) },
       { name: 'blipButtonPin', label: 'Botão do blip na redução' },
       { name: 'acSwitch', label: 'Botão do A/C' },
     ] },

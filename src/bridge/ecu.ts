@@ -293,6 +293,8 @@ export class EcuSession extends EventEmitter {
       await this.readExtraPages();
       this.flash = this.page1.slice(); this.history = [];
       this.resolverExpressoes();
+      const zerados = this.avisoCamposZerados();
+      if (zerados) aviso = aviso ? `${aviso} ${zerados}` : zerados;
       this.setStatus({ state: 'conectado', progress: 1, message: aviso, undo: 0 });
       reg.add('conectado', `.ini ${this.ini.signature} (${fonte})`);
       reg.parado = true; // daqui em diante só leituras ao vivo: não precisa anotar
@@ -303,6 +305,14 @@ export class EcuSession extends EventEmitter {
       this.setStatus({ state: 'erro', message: m.includes('Registro da conversa') || !arqReg ? m : `${m} (registro: ${arqReg})` });
       this.transport?.close();
     }
+  }
+
+  /** Campos de segurança novos (firmware PR 6) que mapas antigos trazem em 0: avisa ao conectar. */
+  private avisoCamposZerados(): string | undefined {
+    const falta: string[] = [];
+    if (this.constant('blipMaxPedal') === 0) falta.push('pedal máximo do blip = 0 % (o blip nunca acontece; use 10 % em Borboleta eletrônica)');
+    if (this.constant('tuneSwitchMaxTps') === 0) falta.push('borboleta máxima para trocar de ajuste = 0 % (só troca com o motor parado; use 20 % em Gerenciador de ajustes)');
+    return falta.length ? `Atenção, ajuste vindo de firmware antigo: ${falta.join('; ')}.` : undefined;
   }
 
   /** Liga na ECU falsa do modo demonstração (sem simulador e sem placa). */

@@ -135,7 +135,7 @@ export function demoPage(ini: Ini): Uint8Array {
   sc('stft_cellCfgs3_maxAdd', 10); sc('stft_cellCfgs3_maxRemove', 10); sc('stft_deadband', 0.5);
   sc('coldStartInjectorMaxClt', 15); sc('coldStartInjectorAfterStart', 3); sc('coldStartInjectorPeriod', 200); sc('floodClearTps', 90); sc('oilPressureStartTimeout', 5); sc('oilRestartLockTime', 30);
   sc('knockRetardAggression', 2); sc('knockRetardReapplyRate', 0.5); sc('knockFrequency', 6800);
-  bits('etbAutoRecoverEnabled', 1); sc('etbAutoRecoverDelay', 1); sc('etbAutoRecoverMaxTries', 3); sc('blipThrottleAdd', 20); sc('blipDuration', 150); sc('blipMinRpm', 2500);
+  bits('etbAutoRecoverEnabled', 1); sc('etbAutoRecoverDelay', 1); sc('etbAutoRecoverMaxTries', 3); sc('blipThrottleAdd', 20); sc('blipDuration', 150); sc('blipMinRpm', 2500); sc('blipMaxPedal', 10);
   // v0.28: shift light, água/metanol e controle de tração.
   [7200, 6800, 7400, 7600, 7600, 7600, 7600].forEach((r, i) => sc(`shiftLightRpm${i + 1}`, r)); sc('shiftLightPreRpm', 1500);
   sc('wmiGppwmChannel', 8); sc('gppwm8_pwmFrequency', 30); sc('wmiActiveDuty', 10); sc('wmiLevelDelay', 2); sc('wmiTimingAdd', 3); sc('wmiFuelTrim', -5);
@@ -207,7 +207,7 @@ export function demoPage(ini: Ini): Uint8Array {
   arr('sparkDwellRpmBins', rpm8); arr('sparkDwellValues', [3.5, 3.2, 3.0, 3.0, 3.0, 2.8, 2.6, 2.5]);
   arr('injPhaseRpmBins', [800, 2000, 3500, 5000, 6500, 8000]); arr('injPhaseLoadBins', [30, 60, 100, 150, 200, 250]);
   arr('injectionPhase', Array.from({ length: 36 }, (_, i) => -360 - (i % 6) * 20));
-  sc('tuneCount', 1);
+  sc('tuneCount', 1); sc('tuneSwitchMaxTps', 20);
   sc('activeTune', 1);
   bits('fuelAlgorithm', LM_INJ_TIME);
   bits('injTimeUseTps', 0);

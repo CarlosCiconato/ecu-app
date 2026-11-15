@@ -10,7 +10,8 @@ import type { Screen } from '../App';
 export function Ajustes({ go }: { go: (s: Screen) => void }) {
   const s = useStatus();
   const live = useLive(['tuneInUse']);
-  const [c, setC] = useState<{ activeTune: number; tuneCount: number }>();
+  // tuneMaxTps = tuneSwitchMaxTps (firmware PR 6); null = firmware antigo, sem o campo.
+  const [c, setC] = useState<{ activeTune: number; tuneCount: number; tuneSwitchMaxTps: number | null }>();
   const [from, setFrom] = useState(1);
   const [to, setTo] = useState(2);
   const [busy, setBusy] = useState(false);
@@ -20,7 +21,7 @@ export function Ajustes({ go }: { go: (s: Screen) => void }) {
 
   useEffect(() => {
     if (s.state !== 'conectado') return;
-    call<{ activeTune: number; tuneCount: number }>('constants', { names: ['activeTune', 'tuneCount'] }).then(setC, (e) => setMsg(e.message));
+    call<{ activeTune: number; tuneCount: number; tuneSwitchMaxTps: number | null }>('constants', { names: ['activeTune', 'tuneCount', 'tuneSwitchMaxTps'] }).then(setC, (e) => setMsg(e.message));
   }, [s.state]);
 
   if (s.state !== 'conectado') return <main className="screen"><div className="notice err">Conecte na ECU para ver os ajustes.</div></main>;
@@ -34,7 +35,7 @@ export function Ajustes({ go }: { go: (s: Screen) => void }) {
   // No firmware, tuneCount = quantos ajustes estão ligados (1, 1-2 ou 1-3); o botão troca entre eles.
   // Um ajuste acima disso não entra nem escolhido pelo app (visto no simulador real), então escolher
   // o ajuste 3 com só 1 ligado liga também os de baixo.
-  const setField = (name: 'activeTune' | 'tuneCount', v: number) =>
+  const setField = (name: 'activeTune' | 'tuneCount' | 'tuneSwitchMaxTps', v: number) =>
     run(async () => {
       if (name === 'activeTune' && c && v > c.tuneCount) {
         const n = await call<number>('setValue', { name: 'tuneCount', value: v });
@@ -80,7 +81,7 @@ export function Ajustes({ go }: { go: (s: Screen) => void }) {
         })}
       </section>
 
-      <section style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 12 }}>
+      <section style={{ display: 'grid', gridTemplateColumns: c.tuneSwitchMaxTps == null ? '1fr 1.4fr' : '1fr 1fr 1.3fr', gap: 12 }}>
         <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <span className="label">Ajustes ligados (o botão do painel troca entre eles)</span>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
@@ -90,6 +91,7 @@ export function Ajustes({ go }: { go: (s: Screen) => void }) {
             ))}
           </div>
         </div>
+        {c.tuneSwitchMaxTps != null && TrocaComMotorLigado({ v: c.tuneSwitchMaxTps, busy, set: (v) => setField('tuneSwitchMaxTps', v) })}
         <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <span className="label">Copiar todos os mapas de um ajuste para outro</span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -116,5 +118,23 @@ export function Ajustes({ go }: { go: (s: Screen) => void }) {
         <button className="btn primary" style={{ height: 52, width: 200, fontSize: 17 }} disabled={busy || !s.dirty} onClick={() => run(() => call('burn').then(() => undefined), 'Gravado na ECU.')}>Gravar na ECU</button>
       </div>
     </main>
+  );
+}
+
+/** Borboleta máxima para trocar de ajuste com o motor ligado (tuneSwitchMaxTps, firmware PR 6).
+ *  Chamada como função (não como <Componente/>) para não ser remontada a cada atualização ao vivo. */
+function TrocaComMotorLigado({ v, busy, set }: { v: number; busy: boolean; set: (v: number) => void }) {
+  const lim = (x: number) => Math.max(0, Math.min(100, x));
+  return (
+    <div className="card" title="Com o motor ligado, o ajuste só troca com a borboleta abaixo deste valor (recomendado 20 %). Motor parado troca sempre. 100 % = troca a qualquer hora."
+      style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8, borderColor: v === 0 ? 'var(--red)' : undefined }}>
+      <span className="label">{v === 0 ? 'Em 0 % só troca com o motor parado' : v >= 100 ? 'Troca a qualquer hora, mesmo acelerando' : 'Troca com motor ligado: borboleta até'}</span>
+      <div style={{ display: 'grid', gridTemplateColumns: v === 0 ? '44px 1fr 44px auto' : '44px 1fr 44px', gap: 6, alignItems: 'center' }}>
+        <button className="btn" style={{ height: 46 }} disabled={busy || v <= 0} onClick={() => set(lim(v - 5))}>−</button>
+        <span className="num" style={{ fontSize: 26, textAlign: 'center', whiteSpace: 'nowrap', color: v === 0 ? 'var(--red)' : undefined }}>{v} <span style={{ fontSize: 14, color: 'var(--muted)' }}>%</span></span>
+        <button className="btn" style={{ height: 46 }} disabled={busy || v >= 100} onClick={() => set(lim(v + 5))}>+</button>
+        {v === 0 && <button className="btn primary" style={{ height: 46, fontSize: 14 }} disabled={busy} onClick={() => set(20)}>20 %</button>}
+      </div>
+    </div>
   );
 }
